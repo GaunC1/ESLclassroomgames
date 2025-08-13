@@ -271,16 +271,16 @@ export default function GamePage() {
                     }}
                   />
                   {gamesError && <div className="text-xs text-rose-600">{gamesError}</div>}
-                  <div className="flex justify-end">
+                  <div className="flex justify-end pt-2">
                     <Button variant="primary" disabled={!selectedGameId} onClick={() => setSetupStep('teams')}>Continue</Button>
                   </div>
                 </Card>
               )}
 
               {mode === 'build' && (
-                <div className="space-y-3">
+                <div className="space-y-4">
                   <CustomRoundsEditor rounds={customRounds.length ? customRounds : DEFAULT_ROUNDS.slice(0,3)} onChange={setCustomRounds} />
-                  <Card title="Save custom game (optional)">
+                  <Card title="Save custom game (optional)" accent="#BFD6FF">
                     <div className="flex flex-col sm:flex-row gap-2">
                       <Input value={newGameName} onChange={(e) => setNewGameName(e.target.value)} placeholder="Game name" className="flex-1" />
                       <Input value={newGameDesc} onChange={(e) => setNewGameDesc(e.target.value)} placeholder="Description (optional)" className="flex-1" />
@@ -291,7 +291,7 @@ export default function GamePage() {
                     {saveMsg && <div className="text-xs text-emerald-700">{saveMsg}</div>}
                     {customError && <div className="text-xs text-rose-600">{customError}</div>}
                   </Card>
-                  <div className="flex justify-end">
+                  <div className="flex justify-end pt-2">
                     <Button variant="primary" onClick={() => setSetupStep('teams')}>Continue</Button>
                   </div>
                 </div>

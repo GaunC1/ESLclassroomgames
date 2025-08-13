@@ -7,6 +7,7 @@ import { Button } from "@/components/ui/Button";
 import { Tag } from "@/components/ui/Tag";
 
 export function CustomRoundsEditor({ rounds, onChange }: { rounds: Round[]; onChange: (r: Round[]) => void }) {
+  const accents = ['#FFB3D1', '#BFD6FF', '#FFE29A', '#C2F0C2', '#E1C2FF', '#FFC9A3']
   function addRound() {
     onChange([...rounds, { title: `Round ${rounds.length + 1}`, targets: [] }]);
   }
@@ -51,6 +52,7 @@ export function CustomRoundsEditor({ rounds, onChange }: { rounds: Round[]; onCh
           onMoveUp={() => moveRound(idx, -1)}
           onMoveDown={() => moveRound(idx, +1)}
           onRemove={() => removeRound(idx)}
+          accent={accents[idx % accents.length]}
         />
       ))}
       <Button type="button" variant="secondary" onClick={addRound}>+ Add Round</Button>
@@ -68,6 +70,7 @@ function RoundEditorRow({
   onMoveUp,
   onMoveDown,
   onRemove,
+  accent,
 }: {
   index: number;
   title: string;
@@ -78,10 +81,11 @@ function RoundEditorRow({
   onMoveUp: () => void;
   onMoveDown: () => void;
   onRemove: () => void;
+  accent?: string;
 }) {
   const [word, setWord] = useState("");
   return (
-    <Card className="space-y-2">
+    <Card className="space-y-2" accent={accent}>
       <div className="flex items-center justify-between gap-2">
         <div className="flex items-center gap-2 flex-1">
           <span className="text-xs text-gray-500">R{index + 1}</span>
@@ -122,4 +126,3 @@ function RoundEditorRow({
     </Card>
   );
 }
-
