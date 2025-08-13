@@ -2,11 +2,18 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
+import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
+import { Input } from "@/components/ui/Input";
+import { TextArea } from "@/components/ui/TextArea";
+import { SectionHeader } from "@/components/ui/SectionHeader";
+import { SelectionCard } from "@/components/ui/SelectionCard";
+import { GameChooser } from "@/components/game/GameChooser";
+import { CustomRoundsEditor } from "@/components/game/CustomRoundsEditor";
+import type { Round, GameListItem } from "@/types/game";
+import { clamp, scoreSentence } from "@/lib/scoring";
 
-type Round = {
-  title: string;
-  targets: string[];
-};
+// Round type is shared
 
 const DEFAULT_ROUNDS: Round[] = [
   { title: "Round 1 – 6 words", targets: ["ball", "pencil", "red", "blue", "in", "on"] },
@@ -23,9 +30,7 @@ const DEFAULT_ROUNDS: Round[] = [
 
 type Phase = "prompt" | "writing" | "grading" | "summary" | "finished";
 
-function clamp(n: number, min = 0, max = Infinity) {
-  return Math.max(min, Math.min(max, n));
-}
+// clamp imported from lib
 
 export default function GamePage() {
   // Setup flow
@@ -80,29 +85,7 @@ export default function GamePage() {
   const perRoundMax = useMemo(() => rounds.map((r) => r.targets.length + 1), [rounds]);
   const teamTotalMax = perRoundMax.reduce((a, b) => a + b, 0);
 
-  // Scoring helpers
-  function normalizeInput(str: string) {
-    return str.toLowerCase().replace(/[^a-z\s]/g, " ").replace(/\s+/g, " ").trim();
-  }
-  function phraseToRegex(phrase: string): RegExp {
-    const parts = phrase
-      .toLowerCase()
-      .split(/\s+/)
-      .map((p) => p.replace(/[.*+?^${}()|[\]\\]/g, "\\$&"));
-    const pattern = `\\b${parts.join("\\s+")}\\b`;
-    return new RegExp(pattern, "i");
-  }
-  function scoreSentence(sentence: string, targets: string[]) {
-    const normalized = normalizeInput(sentence);
-    const used = new Set<string>();
-    for (const t of targets) {
-      const re = phraseToRegex(t);
-      if (re.test(normalized)) used.add(t);
-    }
-    const base = used.size;
-    const bonus = used.size === targets.length ? 1 : 0;
-    return { used: Array.from(used), score: base + bonus, bonus };
-  }
+  // scoring imported from lib
 
   async function startGame() {
     const cleaned = teamInputs
@@ -265,31 +248,19 @@ export default function GamePage() {
             <section className="space-y-3">
               <h1 className="text-2xl font-bold">Choose how to start</h1>
               <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
-                <button className="rounded-lg border p-4 bg-white/80 hover:bg-white" onClick={() => { setMode('choose'); setSetupStep('configure'); }}>
-                  <div className="font-semibold mb-1">Choose Game</div>
-                  <div className="text-xs text-gray-600">Pick from your saved games</div>
-                </button>
-                <button className="rounded-lg border p-4 bg-white/80 hover:bg-white" onClick={() => { setMode('build'); setSetupStep('configure'); }}>
-                  <div className="font-semibold mb-1">Build New Game</div>
-                  <div className="text-xs text-gray-600">Create rounds and targets</div>
-                </button>
-                <button className="rounded-lg border p-4 bg-white/80 hover:bg-white" onClick={() => { setMode('generate'); setSetupStep('configure'); }}>
-                  <div className="font-semibold mb-1">Generate Game</div>
-                  <div className="text-xs text-gray-600">Use AI to suggest rounds</div>
-                </button>
+                <SelectionCard title="Choose Game" subtitle="Pick from your saved games" onClick={() => { setMode('choose'); setSetupStep('configure'); }} />
+                <SelectionCard title="Build New Game" subtitle="Create rounds and targets" onClick={() => { setMode('build'); setSetupStep('configure'); }} />
+                <SelectionCard title="Generate Game" subtitle="Use AI to suggest rounds" onClick={() => { setMode('generate'); setSetupStep('configure'); }} />
               </div>
             </section>
           )}
 
           {setupStep === 'configure' && (
             <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold">{mode === 'choose' ? 'Choose a game' : mode === 'build' ? 'Build your game' : 'Generate a game'}</h2>
-                <button className="text-sm underline" onClick={() => setSetupStep('select')}>Back</button>
-              </div>
+              <SectionHeader title={mode === 'choose' ? 'Choose a game' : mode === 'build' ? 'Build your game' : 'Generate a game'} onBack={() => setSetupStep('select')} />
 
               {mode === 'choose' && (
-                <div className="rounded-lg border p-3 sm:p-4 space-y-2 bg-white/70">
+                <Card>
                   <GameChooser
                     selectedId={selectedGameId}
                     onSelect={setSelectedGameId}
@@ -301,77 +272,45 @@ export default function GamePage() {
                   />
                   {gamesError && <div className="text-xs text-rose-600">{gamesError}</div>}
                   <div className="flex justify-end">
-                    <button
-                      className="px-4 py-2 btn-fun-primary text-sm disabled:opacity-50"
-                      disabled={!selectedGameId}
-                      onClick={() => setSetupStep('teams')}
-                    >
-                      Continue
-                    </button>
+                    <Button variant="primary" disabled={!selectedGameId} onClick={() => setSetupStep('teams')}>Continue</Button>
                   </div>
-                </div>
+                </Card>
               )}
 
               {mode === 'build' && (
                 <div className="space-y-3">
                   <CustomRoundsEditor rounds={customRounds.length ? customRounds : DEFAULT_ROUNDS.slice(0,3)} onChange={setCustomRounds} />
-                  <div className="rounded border p-3 bg-white/70 space-y-2">
-                    <div className="text-sm font-medium">Save custom game (optional)</div>
+                  <Card title="Save custom game (optional)">
                     <div className="flex flex-col sm:flex-row gap-2">
-                      <input
-                        value={newGameName}
-                        onChange={(e) => setNewGameName(e.target.value)}
-                        placeholder="Game name"
-                        className="flex-1 rounded border px-2 py-1 text-sm"
-                      />
-                      <input
-                        value={newGameDesc}
-                        onChange={(e) => setNewGameDesc(e.target.value)}
-                        placeholder="Description (optional)"
-                        className="flex-1 rounded border px-2 py-1 text-sm"
-                      />
-                      <button
-                        type="button"
-                        onClick={saveCustomGame}
-                        disabled={saving}
-                        className="px-3 py-2 btn-fun-secondary text-sm disabled:opacity-50"
-                      >
+                      <Input value={newGameName} onChange={(e) => setNewGameName(e.target.value)} placeholder="Game name" className="flex-1" />
+                      <Input value={newGameDesc} onChange={(e) => setNewGameDesc(e.target.value)} placeholder="Description (optional)" className="flex-1" />
+                      <Button type="button" variant="secondary" onClick={saveCustomGame} disabled={saving}>
                         {saving ? 'Saving…' : 'Save'}
-                      </button>
+                      </Button>
                     </div>
                     {saveMsg && <div className="text-xs text-emerald-700">{saveMsg}</div>}
                     {customError && <div className="text-xs text-rose-600">{customError}</div>}
-                  </div>
+                  </Card>
                   <div className="flex justify-end">
-                    <button className="px-4 py-2 btn-fun-primary text-sm" onClick={() => setSetupStep('teams')}>Continue</button>
+                    <Button variant="primary" onClick={() => setSetupStep('teams')}>Continue</Button>
                   </div>
                 </div>
               )}
 
               {mode === 'generate' && (
-                <div className="rounded-lg border p-3 sm:p-4 space-y-2 bg-white/70">
-                  <div className="text-sm font-medium">Generate rounds from text (AI)</div>
-                  <textarea
-                    value={aiText}
-                    onChange={(e) => setAiText(e.target.value)}
-                    className="w-full min-h-32 rounded border p-3 text-sm"
-                    placeholder="Paste a short text here (1–3 paragraphs)"
-                  />
+                <Card title="Generate rounds from text (AI)">
+                  <TextArea value={aiText} onChange={(e) => setAiText(e.target.value)} placeholder="Paste a short text here (1–3 paragraphs)" />
                   <div className="flex flex-wrap items-center gap-2 text-xs">
                     <label className="inline-flex items-center gap-1">Rounds
-                      <input type="number" min={1} max={15} value={aiNumRounds} onChange={(e) => setAiNumRounds(parseInt(e.target.value || '10', 10))} className="w-16 rounded border px-2 py-1" />
+                      <Input type="number" min={1} max={15} value={aiNumRounds} onChange={(e) => setAiNumRounds(parseInt(e.target.value || '10', 10))} className="w-16" />
                     </label>
                     <label className="inline-flex items-center gap-1">Min targets
-                      <input type="number" min={1} max={10} value={aiMinTargets} onChange={(e) => setAiMinTargets(parseInt(e.target.value || '6', 10))} className="w-16 rounded border px-2 py-1" />
+                      <Input type="number" min={1} max={10} value={aiMinTargets} onChange={(e) => setAiMinTargets(parseInt(e.target.value || '6', 10))} className="w-16" />
                     </label>
                     <label className="inline-flex items-center gap-1">Max targets
-                      <input type="number" min={aiMinTargets} max={12} value={aiMaxTargets} onChange={(e) => setAiMaxTargets(parseInt(e.target.value || '10', 10))} className="w-16 rounded border px-2 py-1" />
+                      <Input type="number" min={aiMinTargets} max={12} value={aiMaxTargets} onChange={(e) => setAiMaxTargets(parseInt(e.target.value || '10', 10))} className="w-16" />
                     </label>
-                    <button
-                      type="button"
-                      className="ml-auto px-3 py-2 btn-fun-primary text-sm"
-                      disabled={aiBusy || !aiText.trim()}
-                      onClick={async () => {
+                    <Button type="button" variant="primary" className="ml-auto" disabled={aiBusy || !aiText.trim()} onClick={async () => {
                         try {
                           setAiBusy(true);
                           setAiError(null);
@@ -403,10 +342,7 @@ export default function GamePage() {
                         } finally {
                           setAiBusy(false);
                         }
-                      }}
-                    >
-                      {aiBusy ? 'Generating…' : 'Generate'}
-                    </button>
+                      }}>{aiBusy ? 'Generating…' : 'Generate'}</Button>
                   </div>
                   {aiError && <div className="text-xs text-rose-600">{aiError}</div>}
                   {customRounds.length > 0 && (
@@ -414,61 +350,46 @@ export default function GamePage() {
                       <div className="text-sm font-medium mb-2">Review & edit generated rounds</div>
                       <CustomRoundsEditor rounds={customRounds} onChange={setCustomRounds} />
                       <div className="flex justify-end mt-3">
-                        <button className="px-4 py-2 btn-fun-primary text-sm" onClick={() => setSetupStep('teams')}>Continue</button>
+                        <Button variant="primary" onClick={() => setSetupStep('teams')}>Continue</Button>
                       </div>
                     </div>
                   )}
-                </div>
+                </Card>
               )}
             </section>
           )}
 
           {setupStep === 'teams' && (
             <section className="space-y-4">
-              <div className="flex items-center justify-between">
-                <h2 className="text-xl font-semibold">Create Teams</h2>
-                <button className="text-sm underline" onClick={() => setSetupStep('configure')}>Back</button>
-              </div>
+              <SectionHeader title="Create Teams" onBack={() => setSetupStep('configure')} />
 
               <p className="text-sm text-gray-600">Add teams for this game.</p>
               <div className="space-y-2">
                 {teamInputs.map((name, i) => (
                   <div key={i} className="flex items-center gap-2">
                     <span className="w-16 text-xs text-gray-600">Team {i + 1}</span>
-                    <input
+                    <Input
                       value={name}
                       onChange={(e) => {
                         const v = e.target.value;
                         setTeamInputs((prev) => prev.map((t, idx) => (idx === i ? v : t)));
                       }}
-                      className="flex-1 rounded border px-3 py-2 text-sm"
+                      className="flex-1 px-3 py-2"
                       placeholder={`Team ${i + 1}`}
                     />
-                    <button
-                      onClick={() => setTeamInputs((prev) => prev.filter((_, idx) => idx !== i))}
-                      className="px-2 py-2 rounded border text-xs hover:bg-gray-50"
-                      aria-label={`Remove Team ${i + 1}`}
-                    >
+                    <Button size="sm" onClick={() => setTeamInputs((prev) => prev.filter((_, idx) => idx !== i))} aria-label={`Remove Team ${i + 1}`}>
                       Remove
-                    </button>
+                    </Button>
                   </div>
                 ))}
               </div>
               <div className="flex items-center gap-3">
-                <button
-                  onClick={() => setTeamInputs((prev) => (prev.length >= 10 ? prev : [...prev, `Team ${prev.length + 1}`]))}
-                  disabled={teamInputs.length >= 10}
-                  className="px-3 py-2 rounded border text-sm hover:bg-gray-50 disabled:opacity-50"
-                >
+                <Button onClick={() => setTeamInputs((prev) => (prev.length >= 10 ? prev : [...prev, `Team ${prev.length + 1}`]))} disabled={teamInputs.length >= 10}>
                   Add Team
-                </button>
-                <button
-                  onClick={startGame}
-                  disabled={teamInputs.every((t) => !t.trim())}
-                  className="ml-auto px-4 py-2 btn-fun-primary text-sm disabled:opacity-50"
-                >
+                </Button>
+                <Button variant="primary" className="ml-auto" onClick={startGame} disabled={teamInputs.every((t) => !t.trim())}>
                   Start Game
-                </button>
+                </Button>
               </div>
             </section>
           )}
@@ -714,171 +635,4 @@ export default function GamePage() {
   );
 }
 
-// Inline component to fetch and display games
-function GameChooser({ selectedId, onSelect, onLoaded, onError }: {
-  selectedId: number | null,
-  onSelect: (id: number) => void,
-  onLoaded: (games: { id: number; name: string; description?: string | null; roundsCount: number }[]) => void,
-  onError: (msg: string | null) => void
-}) {
-  const [games, setGames] = useState<{ id: number; name: string; description?: string | null; roundsCount: number }[]>([])
-  useEffect(() => {
-    let cancelled = false
-    async function load() {
-      try {
-        const res = await fetch('/api/games')
-        if (!res.ok) throw new Error('Failed to load games')
-        const data = await res.json()
-        if (!cancelled) {
-          setGames(data)
-          onLoaded(data)
-          onError(null)
-        }
-      } catch (e) {
-        if (!cancelled) onError('Could not load games list')
-      }
-    }
-    load()
-    return () => { cancelled = true }
-  }, [])
-
-  if (!games.length) return <div className="text-xs text-gray-500">Loading games…</div>
-
-  return (
-    <div className="flex flex-col gap-2">
-      {games.map((g) => (
-        <label key={g.id} className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
-            name="game-choice"
-            checked={selectedId === g.id}
-            onChange={() => onSelect(g.id)}
-          />
-          <span className="font-medium">{g.name}</span>
-          <span className="text-xs text-gray-600">({g.roundsCount} rounds)</span>
-        </label>
-      ))}
-    </div>
-  )
-}
-
-// Visual editor for custom rounds
-function CustomRoundsEditor({ rounds, onChange }: { rounds: Round[]; onChange: (r: Round[]) => void }) {
-  function addRound() {
-    onChange([...rounds, { title: `Round ${rounds.length + 1}`, targets: [] }]);
-  }
-  function removeRound(idx: number) {
-    const next = rounds.filter((_, i) => i !== idx);
-    onChange(next);
-  }
-  function updateTitle(idx: number, title: string) {
-    const next = rounds.map((r, i) => (i === idx ? { ...r, title } : r));
-    onChange(next);
-  }
-  function addTarget(idx: number, word: string) {
-    const v = word.trim();
-    if (!v) return;
-    const next = rounds.map((r, i) => (i === idx ? { ...r, targets: Array.from(new Set([...(r.targets || []), v])) } : r));
-    onChange(next);
-  }
-  function removeTarget(idx: number, word: string) {
-    const next = rounds.map((r, i) => (i === idx ? { ...r, targets: (r.targets || []).filter((t) => t !== word) } : r));
-    onChange(next);
-  }
-  function moveRound(idx: number, dir: -1 | 1) {
-    const to = idx + dir;
-    if (to < 0 || to >= rounds.length) return;
-    const next = rounds.slice();
-    const [item] = next.splice(idx, 1);
-    next.splice(to, 0, item);
-    onChange(next);
-  }
-
-  return (
-    <div className="space-y-3">
-      {rounds.map((r, idx) => (
-        <RoundEditorRow
-          key={idx}
-          index={idx}
-          title={r.title}
-          targets={r.targets}
-          onTitle={(t) => updateTitle(idx, t)}
-          onAddTarget={(w) => addTarget(idx, w)}
-          onRemoveTarget={(w) => removeTarget(idx, w)}
-          onMoveUp={() => moveRound(idx, -1)}
-          onMoveDown={() => moveRound(idx, +1)}
-          onRemove={() => removeRound(idx)}
-        />
-      ))}
-      <button type="button" onClick={addRound} className="px-3 py-2 btn-fun-secondary text-sm">+ Add Round</button>
-    </div>
-  );
-}
-
-function RoundEditorRow({
-  index,
-  title,
-  targets,
-  onTitle,
-  onAddTarget,
-  onRemoveTarget,
-  onMoveUp,
-  onMoveDown,
-  onRemove,
-}: {
-  index: number;
-  title: string;
-  targets: string[];
-  onTitle: (t: string) => void;
-  onAddTarget: (w: string) => void;
-  onRemoveTarget: (w: string) => void;
-  onMoveUp: () => void;
-  onMoveDown: () => void;
-  onRemove: () => void;
-}) {
-  const [word, setWord] = useState("");
-  return (
-    <div className="rounded border p-3 bg-white/70 space-y-2">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex items-center gap-2 flex-1">
-          <span className="text-xs text-gray-500">R{index + 1}</span>
-          <input
-            value={title}
-            onChange={(e) => onTitle(e.target.value)}
-            placeholder={`Round ${index + 1} title`}
-            className="flex-1 rounded border px-2 py-1 text-sm"
-          />
-        </div>
-        <div className="flex items-center gap-2">
-          <button type="button" onClick={onMoveUp} className="px-2 py-1 rounded border text-xs hover:bg-gray-50">↑</button>
-          <button type="button" onClick={onMoveDown} className="px-2 py-1 rounded border text-xs hover:bg-gray-50">↓</button>
-          <button type="button" onClick={onRemove} className="px-2 py-1 rounded border text-xs hover:bg-rose-50">Remove</button>
-        </div>
-      </div>
-      <div className="flex items-center gap-2">
-        <input
-          value={word}
-          onChange={(e) => setWord(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter') {
-              e.preventDefault();
-              onAddTarget(word);
-              setWord("");
-            }
-          }}
-          placeholder="Add target word/phrase and press Enter"
-          className="flex-1 rounded border px-2 py-1 text-sm"
-        />
-        <button type="button" onClick={() => { onAddTarget(word); setWord(""); }} className="px-3 py-1.5 btn-fun-secondary text-xs">Add</button>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        {(targets || []).map((t) => (
-          <span key={t} className="chip inline-flex items-center gap-1 text-xs">
-            {t}
-            <button type="button" onClick={() => onRemoveTarget(t)} className="ml-1 px-1 rounded border text-[10px] hover:bg-gray-50">✖</button>
-          </span>
-        ))}
-      </div>
-    </div>
-  );
-}
+// moved GameChooser and CustomRoundsEditor to shared components
