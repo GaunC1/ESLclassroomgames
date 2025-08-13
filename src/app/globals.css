@@ -24,3 +24,76 @@ body {
   color: var(--foreground);
   font-family: Arial, Helvetica, sans-serif;
 }
+
+/* Playful, colorful background and UI helpers */
+.bg-fun {
+  /* Soft gradient with subtle radial dots overlay */
+  background:
+    radial-gradient(circle at 10% 10%, rgba(255, 182, 193, 0.25) 0, rgba(255, 182, 193, 0.0) 40%),
+    radial-gradient(circle at 90% 20%, rgba(173, 216, 230, 0.25) 0, rgba(173, 216, 230, 0.0) 40%),
+    radial-gradient(circle at 20% 80%, rgba(255, 223, 186, 0.25) 0, rgba(255, 223, 186, 0.0) 40%),
+    linear-gradient(180deg, #fff 0%, #f9fbff 100%);
+}
+
+.bubble-tile {
+  border-radius: 16px;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.08);
+  transition: transform 120ms ease, box-shadow 120ms ease;
+}
+.bubble-tile:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 10px 0 rgba(0, 0, 0, 0.08);
+}
+
+.btn-fun-primary {
+  background: linear-gradient(135deg, #ff72b6, #7aa9ff, #ffc857);
+  color: #fff;
+  border: none;
+  border-radius: 12px;
+  box-shadow: 0 6px 0 rgba(0, 0, 0, 0.12);
+  transition: transform 120ms ease, box-shadow 120ms ease, opacity 120ms ease;
+}
+.btn-fun-primary:hover {
+  transform: translateY(-1px);
+  box-shadow: 0 10px 0 rgba(0, 0, 0, 0.12);
+}
+.btn-fun-primary:active {
+  transform: translateY(0);
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.12);
+}
+
+.btn-fun-secondary {
+  background: #fff;
+  border: 2px solid #e9eefc;
+  color: #111;
+  border-radius: 12px;
+  box-shadow: 0 4px 0 rgba(0, 0, 0, 0.06);
+  transition: transform 120ms ease, box-shadow 120ms ease, background 120ms ease;
+}
+.btn-fun-secondary:hover {
+  background: #fbfdff;
+  transform: translateY(-1px);
+  box-shadow: 0 8px 0 rgba(0, 0, 0, 0.06);
+}
+
+.chip {
+  border-radius: 9999px;
+  padding: 6px 10px;
+  border: 1px solid #e5e7eb;
+  background: #fff;
+}
+.chip-used {
+  background: #16a34a;
+  color: #fff;
+  border-color: #16a34a;
+}
+
+@keyframes pulseBig {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 0 rgba(0,0,0,0)); }
+  50% { transform: scale(1.04); filter: drop-shadow(0 6px 0 rgba(0,0,0,0.08)); }
+}
+.animate-pulse-big { animation: pulseBig 1.6s ease-in-out infinite; }
+
+.bar-fun {
+  background: linear-gradient(90deg, rgba(255,114,182,0.12), rgba(122,169,255,0.12), rgba(255,200,87,0.12));
+}

@@ -1,0 +1,33 @@
+// Prisma schema for SQLite
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+model Game {
+  id          Int       @id @default(autoincrement())
+  name        String    @unique
+  description String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+  rounds      Round[]
+}
+
+model Round {
+  id        Int      @id @default(autoincrement())
+  gameId    Int
+  index     Int
+  title     String
+  targets   String   // JSON-encoded array of strings
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  game   Game   @relation(fields: [gameId], references: [id])
+
+  @@unique([gameId, index])
+  @@index([gameId, index])
+}
