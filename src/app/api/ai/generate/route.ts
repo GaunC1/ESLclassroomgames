@@ -75,7 +75,7 @@ export async function POST(req: Request) {
 
     const openai = new OpenAI({ apiKey: process.env.OPENAI_API_KEY })
 
-    const resp = await openai.responses.create({
+    const resp: any = await openai.responses.create({
       model: MODEL,
       input: [
         {
@@ -104,17 +104,16 @@ export async function POST(req: Request) {
           strict: true,
           schema: jsonSchema as any,
         },
-        verbosity: 'medium',
       },
     })
 
     // Extract JSON text from the response
-    const out = resp.output?.[0]
+    const out = (resp as any).output?.[0]
     let jsonText: string | undefined
     if (out && out.type === 'output_text') {
-      jsonText = out.text
-    } else if (resp.output_text) {
-      jsonText = resp.output_text
+      jsonText = (out as any).text
+    } else if ((resp as any).output_text) {
+      jsonText = (resp as any).output_text
     }
     if (!jsonText) {
       return NextResponse.json({ error: 'No JSON returned' }, { status: 502 })

@@ -28,10 +28,17 @@ function clamp(n: number, min = 0, max = Infinity) {
 }
 
 export default function GamePage() {
-  // Setup
+  // Setup flow
   const [isSetup, setIsSetup] = useState(true);
+  type SetupStep = 'select' | 'configure' | 'teams';
+  type Mode = 'choose' | 'build' | 'generate' | null;
+  const [setupStep, setSetupStep] = useState<SetupStep>('select');
+  const [mode, setMode] = useState<Mode>(null);
+
+  // Teams
   const [teamInputs, setTeamInputs] = useState<string[]>(["Team 1", "Team 2"]);
-  const [useCustomRounds, setUseCustomRounds] = useState(false);
+
+  // Build / edit
   const [customRounds, setCustomRounds] = useState<Round[]>([]);
   const [customError, setCustomError] = useState<string | null>(null);
   const [saveMsg, setSaveMsg] = useState<string | null>(null);
@@ -43,7 +50,7 @@ export default function GamePage() {
   const [roundIndex, setRoundIndex] = useState(0);
   const [phase, setPhase] = useState<Phase>("prompt");
 
-  // Available games from DB
+  // Available games from DB (choose mode)
   type GameListItem = { id: number; name: string; description?: string | null; roundsCount: number };
   const [games, setGames] = useState<GameListItem[]>([]);
   const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
@@ -105,7 +112,7 @@ export default function GamePage() {
     if (cleaned.length === 0) return;
 
     let resolved = DEFAULT_ROUNDS;
-    if (useCustomRounds) {
+    if (mode === 'build' || mode === 'generate') {
       // Basic validation: at least 1 round and at least 1 target each
       if (!customRounds.length || customRounds.some((r) => !r.targets || r.targets.length === 0)) {
         setCustomError("Please add at least one round and one target word per round.");
@@ -116,7 +123,7 @@ export default function GamePage() {
         targets: r.targets.map((t) => String(t).trim()).filter(Boolean),
       }));
       setCustomError(null);
-    } else if (selectedGameId) {
+    } else if (mode === 'choose' && selectedGameId) {
       try {
         const res = await fetch(`/api/games/${selectedGameId}`);
         if (!res.ok) throw new Error('Failed to load game');
@@ -142,10 +149,6 @@ export default function GamePage() {
   async function saveCustomGame() {
     setSaveMsg(null);
     setCustomError(null);
-    if (!useCustomRounds) {
-      setCustomError('Enable "Build a custom game" first.');
-      return;
-    }
     if (!newGameName.trim()) {
       setCustomError('Please provide a game name.');
       return;
@@ -248,7 +251,7 @@ export default function GamePage() {
     } else setPhase("finished");
   }
 
-  // Setup view
+  // Setup view (multi-step)
   if (isSetup) {
     return (
       <main className="min-h-screen p-6 sm:p-10 bg-fun">
@@ -258,169 +261,217 @@ export default function GamePage() {
             <div className="text-sm text-gray-600">Up to 10 teams</div>
           </div>
 
-          <h1 className="text-2xl font-bold">Create Teams</h1>
-          <p className="text-sm text-gray-600">Add teams and pick a game, or build your own rounds.</p>
-
-          <div className="space-y-2">
-            {teamInputs.map((name, i) => (
-              <div key={i} className="flex items-center gap-2">
-                <span className="w-16 text-xs text-gray-600">Team {i + 1}</span>
-                <input
-                  value={name}
-                  onChange={(e) => {
-                    const v = e.target.value;
-                    setTeamInputs((prev) => prev.map((t, idx) => (idx === i ? v : t)));
-                  }}
-                  className="flex-1 rounded border px-3 py-2 text-sm"
-                  placeholder={`Team ${i + 1}`}
-                />
-                <button
-                  onClick={() => setTeamInputs((prev) => prev.filter((_, idx) => idx !== i))}
-                  className="px-2 py-2 rounded border text-xs hover:bg-gray-50"
-                  aria-label={`Remove Team ${i + 1}`}
-                >
-                  Remove
+          {setupStep === 'select' && (
+            <section className="space-y-3">
+              <h1 className="text-2xl font-bold">Choose how to start</h1>
+              <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+                <button className="rounded-lg border p-4 bg-white/80 hover:bg-white" onClick={() => { setMode('choose'); setSetupStep('configure'); }}>
+                  <div className="font-semibold mb-1">Choose Game</div>
+                  <div className="text-xs text-gray-600">Pick from your saved games</div>
+                </button>
+                <button className="rounded-lg border p-4 bg-white/80 hover:bg-white" onClick={() => { setMode('build'); setSetupStep('configure'); }}>
+                  <div className="font-semibold mb-1">Build New Game</div>
+                  <div className="text-xs text-gray-600">Create rounds and targets</div>
+                </button>
+                <button className="rounded-lg border p-4 bg-white/80 hover:bg-white" onClick={() => { setMode('generate'); setSetupStep('configure'); }}>
+                  <div className="font-semibold mb-1">Generate Game</div>
+                  <div className="text-xs text-gray-600">Use AI to suggest rounds</div>
                 </button>
               </div>
-            ))}
-          </div>
+            </section>
+          )}
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={() => setTeamInputs((prev) => (prev.length >= 10 ? prev : [...prev, `Team ${prev.length + 1}`]))}
-              disabled={teamInputs.length >= 10}
-              className="px-3 py-2 rounded border text-sm hover:bg-gray-50 disabled:opacity-50"
-            >
-              Add Team
-            </button>
-          </div>
+          {setupStep === 'configure' && (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold">{mode === 'choose' ? 'Choose a game' : mode === 'build' ? 'Build your game' : 'Generate a game'}</h2>
+                <button className="text-sm underline" onClick={() => setSetupStep('select')}>Back</button>
+              </div>
 
-          {/* Generate from text (AI) */}
-          <div className="rounded-lg border p-3 sm:p-4 space-y-2 bg-white/70">
-            <div className="text-sm font-medium">Generate rounds from text (AI)</div>
-            <textarea
-              value={aiText}
-              onChange={(e) => setAiText(e.target.value)}
-              className="w-full min-h-32 rounded border p-3 text-sm"
-              placeholder="Paste a short text here (1–3 paragraphs)"
-            />
-            <div className="flex flex-wrap items-center gap-2 text-xs">
-              <label className="inline-flex items-center gap-1">Rounds
-                <input type="number" min={1} max={15} value={aiNumRounds} onChange={(e) => setAiNumRounds(parseInt(e.target.value || '10', 10))} className="w-16 rounded border px-2 py-1" />
-              </label>
-              <label className="inline-flex items-center gap-1">Min targets
-                <input type="number" min={1} max={10} value={aiMinTargets} onChange={(e) => setAiMinTargets(parseInt(e.target.value || '6', 10))} className="w-16 rounded border px-2 py-1" />
-              </label>
-              <label className="inline-flex items-center gap-1">Max targets
-                <input type="number" min={aiMinTargets} max={12} value={aiMaxTargets} onChange={(e) => setAiMaxTargets(parseInt(e.target.value || '10', 10))} className="w-16 rounded border px-2 py-1" />
-              </label>
-              <button
-                type="button"
-                className="ml-auto px-3 py-2 btn-fun-secondary text-sm"
-                disabled={aiBusy || !aiText.trim()}
-                onClick={async () => {
-                  try {
-                    setAiBusy(true);
-                    setAiError(null);
-                    const res = await fetch('/api/ai/generate', {
-                      method: 'POST',
-                      headers: { 'Content-Type': 'application/json' },
-                      body: JSON.stringify({
-                        text: aiText,
-                        config: {
-                          NUM_ROUNDS: aiNumRounds,
-                          MIN_TARGETS_PER_ROUND: aiMinTargets,
-                          MAX_TARGETS_PER_ROUND: aiMaxTargets,
-                        },
-                        name: newGameName || undefined,
-                        description: newGameDesc || undefined,
-                      }),
-                    });
-                    const data = await res.json();
-                    if (!res.ok) throw new Error(data?.error || 'Failed to generate');
-                    const rounds = (data?.rounds || []).map((r: any) => ({ title: String(r.title || ''), targets: (r.targets || []).map((t: any) => String(t)) }));
-                    if (!rounds.length) throw new Error('No rounds returned');
-                    setUseCustomRounds(true);
-                    setCustomRounds(rounds);
-                    // Pre-fill name/desc if provided
-                    if (typeof data?.name === 'string' && !newGameName) setNewGameName(data.name);
-                    if (typeof data?.description === 'string' && !newGameDesc) setNewGameDesc(data.description);
-                  } catch (e: any) {
-                    setAiError(e?.message || 'Could not generate');
-                  } finally {
-                    setAiBusy(false);
-                  }
-                }}
-              >
-                {aiBusy ? 'Generating…' : 'Generate'}
-              </button>
-            </div>
-            {aiError && <div className="text-xs text-rose-600">{aiError}</div>}
-          </div>
-
-          {/* Game chooser */}
-          <div className="rounded-lg border p-3 sm:p-4 space-y-2 bg-white/70">
-            <div className="text-sm font-medium">Choose a game</div>
-            <GameChooser
-              selectedId={selectedGameId}
-              onSelect={setSelectedGameId}
-              onError={setGamesError}
-              onLoaded={(list) => {
-                setGames(list);
-                if (list.length && selectedGameId == null) setSelectedGameId(list[0].id);
-              }}
-            />
-            {gamesError && <div className="text-xs text-rose-600">{gamesError}</div>}
-          </div>
-
-          <div className="rounded-lg border p-3 sm:p-4 space-y-2">
-            <label className="inline-flex items-center gap-2 text-sm">
-              <input type="checkbox" checked={useCustomRounds} onChange={(e) => setUseCustomRounds(e.target.checked)} />
-              Build a custom game
-            </label>
-            {useCustomRounds && (
-              <div className="space-y-3">
-                <CustomRoundsEditor rounds={customRounds} onChange={setCustomRounds} />
-                <div className="rounded border p-3 bg-white/70 space-y-2">
-                  <div className="text-sm font-medium">Save custom game</div>
-                  <div className="flex flex-col sm:flex-row gap-2">
-                    <input
-                      value={newGameName}
-                      onChange={(e) => setNewGameName(e.target.value)}
-                      placeholder="Game name (required)"
-                      className="flex-1 rounded border px-2 py-1 text-sm"
-                    />
-                    <input
-                      value={newGameDesc}
-                      onChange={(e) => setNewGameDesc(e.target.value)}
-                      placeholder="Description (optional)"
-                      className="flex-1 rounded border px-2 py-1 text-sm"
-                    />
+              {mode === 'choose' && (
+                <div className="rounded-lg border p-3 sm:p-4 space-y-2 bg-white/70">
+                  <GameChooser
+                    selectedId={selectedGameId}
+                    onSelect={setSelectedGameId}
+                    onError={setGamesError}
+                    onLoaded={(list) => {
+                      setGames(list);
+                      if (list.length && selectedGameId == null) setSelectedGameId(list[0].id);
+                    }}
+                  />
+                  {gamesError && <div className="text-xs text-rose-600">{gamesError}</div>}
+                  <div className="flex justify-end">
                     <button
-                      type="button"
-                      onClick={saveCustomGame}
-                      disabled={saving}
-                      className="px-3 py-2 btn-fun-primary text-sm disabled:opacity-50"
+                      className="px-4 py-2 btn-fun-primary text-sm disabled:opacity-50"
+                      disabled={!selectedGameId}
+                      onClick={() => setSetupStep('teams')}
                     >
-                      {saving ? 'Saving…' : 'Save Game'}
+                      Continue
                     </button>
                   </div>
-                  {saveMsg && <div className="text-xs text-emerald-700">{saveMsg}</div>}
                 </div>
-                {customError && <div className="text-xs text-rose-600">{customError}</div>}
-              </div>
-            )}
-          </div>
+              )}
 
-          <div className="flex items-center gap-3">
-            <button
-              onClick={startGame}
-              disabled={teamInputs.every((t) => !t.trim())}
-              className="px-4 py-2 btn-fun-primary text-sm disabled:opacity-50"
-            >
-              Start Game
-            </button>
-          </div>
+              {mode === 'build' && (
+                <div className="space-y-3">
+                  <CustomRoundsEditor rounds={customRounds.length ? customRounds : DEFAULT_ROUNDS.slice(0,3)} onChange={setCustomRounds} />
+                  <div className="rounded border p-3 bg-white/70 space-y-2">
+                    <div className="text-sm font-medium">Save custom game (optional)</div>
+                    <div className="flex flex-col sm:flex-row gap-2">
+                      <input
+                        value={newGameName}
+                        onChange={(e) => setNewGameName(e.target.value)}
+                        placeholder="Game name"
+                        className="flex-1 rounded border px-2 py-1 text-sm"
+                      />
+                      <input
+                        value={newGameDesc}
+                        onChange={(e) => setNewGameDesc(e.target.value)}
+                        placeholder="Description (optional)"
+                        className="flex-1 rounded border px-2 py-1 text-sm"
+                      />
+                      <button
+                        type="button"
+                        onClick={saveCustomGame}
+                        disabled={saving}
+                        className="px-3 py-2 btn-fun-secondary text-sm disabled:opacity-50"
+                      >
+                        {saving ? 'Saving…' : 'Save'}
+                      </button>
+                    </div>
+                    {saveMsg && <div className="text-xs text-emerald-700">{saveMsg}</div>}
+                    {customError && <div className="text-xs text-rose-600">{customError}</div>}
+                  </div>
+                  <div className="flex justify-end">
+                    <button className="px-4 py-2 btn-fun-primary text-sm" onClick={() => setSetupStep('teams')}>Continue</button>
+                  </div>
+                </div>
+              )}
+
+              {mode === 'generate' && (
+                <div className="rounded-lg border p-3 sm:p-4 space-y-2 bg-white/70">
+                  <div className="text-sm font-medium">Generate rounds from text (AI)</div>
+                  <textarea
+                    value={aiText}
+                    onChange={(e) => setAiText(e.target.value)}
+                    className="w-full min-h-32 rounded border p-3 text-sm"
+                    placeholder="Paste a short text here (1–3 paragraphs)"
+                  />
+                  <div className="flex flex-wrap items-center gap-2 text-xs">
+                    <label className="inline-flex items-center gap-1">Rounds
+                      <input type="number" min={1} max={15} value={aiNumRounds} onChange={(e) => setAiNumRounds(parseInt(e.target.value || '10', 10))} className="w-16 rounded border px-2 py-1" />
+                    </label>
+                    <label className="inline-flex items-center gap-1">Min targets
+                      <input type="number" min={1} max={10} value={aiMinTargets} onChange={(e) => setAiMinTargets(parseInt(e.target.value || '6', 10))} className="w-16 rounded border px-2 py-1" />
+                    </label>
+                    <label className="inline-flex items-center gap-1">Max targets
+                      <input type="number" min={aiMinTargets} max={12} value={aiMaxTargets} onChange={(e) => setAiMaxTargets(parseInt(e.target.value || '10', 10))} className="w-16 rounded border px-2 py-1" />
+                    </label>
+                    <button
+                      type="button"
+                      className="ml-auto px-3 py-2 btn-fun-primary text-sm"
+                      disabled={aiBusy || !aiText.trim()}
+                      onClick={async () => {
+                        try {
+                          setAiBusy(true);
+                          setAiError(null);
+                          const res = await fetch('/api/ai/generate', {
+                            method: 'POST',
+                            headers: { 'Content-Type': 'application/json' },
+                            body: JSON.stringify({
+                              text: aiText,
+                              config: {
+                                NUM_ROUNDS: aiNumRounds,
+                                MIN_TARGETS_PER_ROUND: aiMinTargets,
+                                MAX_TARGETS_PER_ROUND: aiMaxTargets,
+                              },
+                              name: newGameName || undefined,
+                              description: newGameDesc || undefined,
+                            }),
+                          });
+                          const data = await res.json();
+                          if (!res.ok) throw new Error(data?.error || 'Failed to generate');
+                          const rounds = (data?.rounds || []).map((r: any) => ({ title: String(r.title || ''), targets: (r.targets || []).map((t: any) => String(t)) }));
+                          if (!rounds.length) throw new Error('No rounds returned');
+                          // Move to editor with generated rounds
+                          setMode('build');
+                          setCustomRounds(rounds);
+                          if (typeof data?.name === 'string' && !newGameName) setNewGameName(data.name);
+                          if (typeof data?.description === 'string' && !newGameDesc) setNewGameDesc(data.description);
+                        } catch (e: any) {
+                          setAiError(e?.message || 'Could not generate');
+                        } finally {
+                          setAiBusy(false);
+                        }
+                      }}
+                    >
+                      {aiBusy ? 'Generating…' : 'Generate'}
+                    </button>
+                  </div>
+                  {aiError && <div className="text-xs text-rose-600">{aiError}</div>}
+                  {customRounds.length > 0 && (
+                    <div className="mt-3">
+                      <div className="text-sm font-medium mb-2">Review & edit generated rounds</div>
+                      <CustomRoundsEditor rounds={customRounds} onChange={setCustomRounds} />
+                      <div className="flex justify-end mt-3">
+                        <button className="px-4 py-2 btn-fun-primary text-sm" onClick={() => setSetupStep('teams')}>Continue</button>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+            </section>
+          )}
+
+          {setupStep === 'teams' && (
+            <section className="space-y-4">
+              <div className="flex items-center justify-between">
+                <h2 className="text-xl font-semibold">Create Teams</h2>
+                <button className="text-sm underline" onClick={() => setSetupStep('configure')}>Back</button>
+              </div>
+
+              <p className="text-sm text-gray-600">Add teams for this game.</p>
+              <div className="space-y-2">
+                {teamInputs.map((name, i) => (
+                  <div key={i} className="flex items-center gap-2">
+                    <span className="w-16 text-xs text-gray-600">Team {i + 1}</span>
+                    <input
+                      value={name}
+                      onChange={(e) => {
+                        const v = e.target.value;
+                        setTeamInputs((prev) => prev.map((t, idx) => (idx === i ? v : t)));
+                      }}
+                      className="flex-1 rounded border px-3 py-2 text-sm"
+                      placeholder={`Team ${i + 1}`}
+                    />
+                    <button
+                      onClick={() => setTeamInputs((prev) => prev.filter((_, idx) => idx !== i))}
+                      className="px-2 py-2 rounded border text-xs hover:bg-gray-50"
+                      aria-label={`Remove Team ${i + 1}`}
+                    >
+                      Remove
+                    </button>
+                  </div>
+                ))}
+              </div>
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => setTeamInputs((prev) => (prev.length >= 10 ? prev : [...prev, `Team ${prev.length + 1}`]))}
+                  disabled={teamInputs.length >= 10}
+                  className="px-3 py-2 rounded border text-sm hover:bg-gray-50 disabled:opacity-50"
+                >
+                  Add Team
+                </button>
+                <button
+                  onClick={startGame}
+                  disabled={teamInputs.every((t) => !t.trim())}
+                  className="ml-auto px-4 py-2 btn-fun-primary text-sm disabled:opacity-50"
+                >
+                  Start Game
+                </button>
+              </div>
+            </section>
+          )}
         </div>
       </main>
     );

@@ -1,10 +1,8 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 
-type Params = { params: { id: string } }
-
-export async function GET(_req: Request, { params }: Params) {
-  const id = Number(params.id)
+export async function GET(_req: Request, context: any) {
+  const id = Number(context?.params?.id)
   if (!Number.isFinite(id)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
 
   const game = await prisma.game.findUnique({
