@@ -1,6 +1,8 @@
 "use client";
 import { useEffect, useState } from "react";
 import type { GameListItem } from "@/types/game";
+import { Card } from "@/components/ui/Card";
+import { Button } from "@/components/ui/Button";
 
 export function GameChooser({ selectedId, onSelect, onLoaded, onError }: {
   selectedId: number | null,
@@ -32,20 +34,36 @@ export function GameChooser({ selectedId, onSelect, onLoaded, onError }: {
   if (!games.length) return <div className="text-xs text-gray-500">Loading games…</div>
 
   return (
-    <div className="flex flex-col gap-2">
-      {games.map((g) => (
-        <label key={g.id} className="flex items-center gap-2 text-sm">
-          <input
-            type="radio"
-            name="game-choice"
-            checked={selectedId === g.id}
-            onChange={() => onSelect(g.id)}
-          />
-          <span className="font-medium">{g.name}</span>
-          <span className="text-xs text-gray-600">({g.roundsCount} rounds)</span>
-        </label>
-      ))}
+    <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      {games.map((g) => {
+        const selected = selectedId === g.id
+        return (
+          <div key={g.id}>
+            <Card
+              className={[
+                "cursor-pointer transition",
+                selected ? "ring-2 ring-black" : "hover:bg-white",
+              ].join(" ")}
+              onClick={() => onSelect(g.id)}
+            >
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <div className="font-medium">{g.name}</div>
+                  {g.description && (
+                    <div className="text-xs text-gray-600 mt-0.5 line-clamp-2">{g.description}</div>
+                  )}
+                </div>
+                <div className="text-xs text-gray-600 whitespace-nowrap">{g.roundsCount} rounds</div>
+              </div>
+              <div className="mt-3 flex justify-end">
+                <Button variant={selected ? "primary" : "outline"} onClick={(e) => { e.stopPropagation(); onSelect(g.id); }}>
+                  {selected ? "Selected" : "Select"}
+                </Button>
+              </div>
+            </Card>
+          </div>
+        )
+      })}
     </div>
   )
 }
-
