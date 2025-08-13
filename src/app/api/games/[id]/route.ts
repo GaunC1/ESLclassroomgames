@@ -23,6 +23,15 @@ export async function GET(_req: Request, context: any) {
   })
 }
 
+export async function DELETE(_req: Request, context: any) {
+  const id = Number(context?.params?.id)
+  if (!Number.isFinite(id)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
+  // Delete dependent rounds first, then the game
+  await prisma.round.deleteMany({ where: { gameId: id } })
+  await prisma.game.delete({ where: { id } }).catch(() => {})
+  return new Response(null, { status: 204 })
+}
+
 function safeParseTargets(s: string): string[] {
   try {
     const v = JSON.parse(s)

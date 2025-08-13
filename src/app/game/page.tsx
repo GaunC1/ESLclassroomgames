@@ -143,6 +143,7 @@ export default function GamePage() {
     const payload = {
       name: newGameName.trim(),
       description: newGameDesc.trim() || null,
+      kind: 'SENTENCE' as const,
       rounds: customRounds.map((r, i) => ({
         title: r.title?.trim() ? r.title : `Round ${i + 1}`,
         targets: r.targets.map((t) => String(t).trim()).filter(Boolean),
@@ -268,6 +269,20 @@ export default function GamePage() {
                     onLoaded={(list) => {
                       setGames(list);
                       if (list.length && selectedGameId == null) setSelectedGameId(list[0].id);
+                    }}
+                    kind="SENTENCE"
+                    onEdit={async (id) => {
+                      try {
+                        const res = await fetch(`/api/games/${id}`)
+                        if (!res.ok) throw new Error('Failed to load')
+                        const data = await res.json()
+                        const rounds = (data.rounds || []).map((r: any, i: number) => ({ title: r.title || `Round ${i+1}`, targets: (r.targets || []).map((t: any) => String(t)) }))
+                        setCustomRounds(rounds)
+                        setNewGameName(data.name || '')
+                        setNewGameDesc(data.description || '')
+                        setSelectedGameId(id)
+                        setMode('build')
+                      } catch (e) {}
                     }}
                   />
                   {gamesError && <div className="text-xs text-rose-600">{gamesError}</div>}

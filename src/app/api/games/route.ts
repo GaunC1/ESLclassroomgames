@@ -1,8 +1,12 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 
-export async function GET() {
+export async function GET(req: Request) {
+  const url = new URL(req.url)
+  const kind = url.searchParams.get('kind') as any | null
+  const where = kind ? { kind } : {}
   const games = await prisma.game.findMany({
+    where,
     orderBy: { createdAt: 'asc' },
     include: { _count: { select: { rounds: true } } },
   })
@@ -17,6 +21,7 @@ export async function POST(req: Request) {
     const name = (body?.name ?? '').toString().trim()
     const description = body?.description ? String(body.description) : null
     const rounds = Array.isArray(body?.rounds) ? body.rounds : []
+    const kind = (body?.kind === 'HANGMAN' || body?.kind === 'SENTENCE') ? body.kind : 'SENTENCE'
 
     if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
     if (!rounds.length) return NextResponse.json({ error: 'At least one round is required' }, { status: 400 })
@@ -32,6 +37,7 @@ export async function POST(req: Request) {
       data: {
         name,
         description,
+        kind,
         rounds: { create: roundCreates },
       },
       include: { _count: { select: { rounds: true } } },

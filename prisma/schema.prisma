@@ -12,6 +12,7 @@ model Game {
   id          Int       @id @default(autoincrement())
   name        String    @unique
   description String?
+  kind        String    @default("SENTENCE")
   createdAt   DateTime  @default(now())
   updatedAt   DateTime  @updatedAt
   rounds      Round[]
@@ -27,6 +28,31 @@ model Round {
   updatedAt DateTime @updatedAt
 
   game   Game   @relation(fields: [gameId], references: [id])
+
+  @@unique([gameId, index])
+  @@index([gameId, index])
+}
+
+// Note: SQLite has no native enums; using string for kind
+
+model HangmanGame {
+  id          Int           @id @default(autoincrement())
+  name        String        @unique
+  description String?
+  createdAt   DateTime      @default(now())
+  updatedAt   DateTime      @updatedAt
+  words       HangmanWord[]
+}
+
+model HangmanWord {
+  id        Int          @id @default(autoincrement())
+  gameId    Int
+  index     Int
+  text      String
+  createdAt DateTime     @default(now())
+  updatedAt DateTime     @updatedAt
+
+  game      HangmanGame  @relation(fields: [gameId], references: [id])
 
   @@unique([gameId, index])
   @@index([gameId, index])
