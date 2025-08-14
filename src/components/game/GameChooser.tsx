@@ -4,16 +4,19 @@ import type { GameListItem } from "@/types/game";
 import { Card } from "@/components/ui/Card";
 // No button; selection happens by clicking the card
 
-export function GameChooser({ selectedId, onSelect, onLoaded, onError, kind = 'SENTENCE', endpoint, onEdit }: {
+export function GameChooser({ selectedId, onSelect, onLoaded, onError, kind = 'SENTENCE', endpoint, onEdit, onCreateBuild, onCreateGenerate }: {
   selectedId: number | null,
-  onSelect: (id: number) => void,
+  onSelect: (id: number | null) => void,
   onLoaded: (games: GameListItem[]) => void,
   onError: (msg: string | null) => void,
   kind?: 'SENTENCE' | 'HANGMAN',
   endpoint?: string,
-  onEdit?: (id: number) => void
+  onEdit?: (id: number) => void,
+  onCreateBuild?: () => void,
+  onCreateGenerate?: () => void,
 }) {
   const [games, setGames] = useState<GameListItem[]>([])
+  const [loading, setLoading] = useState<boolean>(true)
   useEffect(() => {
     let cancelled = false
     async function load() {
@@ -26,16 +29,29 @@ export function GameChooser({ selectedId, onSelect, onLoaded, onError, kind = 'S
           setGames(data)
           onLoaded(data)
           onError(null)
+          setLoading(false)
         }
       } catch (e) {
-        if (!cancelled) onError('Could not load games list')
+        if (!cancelled) {
+          onError('Could not load games list')
+          setLoading(false)
+        }
       }
     }
     load()
     return () => { cancelled = true }
   }, [])
 
-  if (!games.length) return <div className="text-xs text-gray-500">Loading games…</div>
+  if (loading) return <div className="text-xs text-gray-500">Loading games…</div>
+  if (!games.length) return (
+    <div className="text-xs text-gray-600">
+      No games yet. Create one with 
+      {" "}
+      <a href="#" className="underline" onClick={(e) => { e.preventDefault(); onCreateBuild?.() }}>Build New Game</a>
+      {" "}or{" "}
+      <a href="#" className="underline" onClick={(e) => { e.preventDefault(); onCreateGenerate?.() }}>Generate Game</a>.
+    </div>
+  )
 
   return (
     <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
@@ -81,7 +97,7 @@ export function GameChooser({ selectedId, onSelect, onLoaded, onError, kind = 'S
                       setGames((prev) => {
                         const next = prev.filter((x) => x.id !== g.id)
                         onLoaded(next)
-                        if (selectedId === g.id) onSelect((next[0]?.id) ?? 0)
+                        if (selectedId === g.id) onSelect(next[0]?.id ?? null)
                         return next
                       })
                     } catch (err) {

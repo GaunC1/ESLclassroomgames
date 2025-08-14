@@ -271,6 +271,8 @@ export default function GamePage() {
                       if (list.length && selectedGameId == null) setSelectedGameId(list[0].id);
                     }}
                     kind="SENTENCE"
+                    onCreateBuild={() => { setMode('build'); setSetupStep('configure'); }}
+                    onCreateGenerate={() => { setMode('generate'); setSetupStep('configure'); }}
                     onEdit={async (id) => {
                       try {
                         const res = await fetch(`/api/games/${id}`)
@@ -319,10 +321,10 @@ export default function GamePage() {
                     <label className="inline-flex items-center gap-1">Rounds
                       <Input type="number" min={1} max={15} value={aiNumRounds} onChange={(e) => setAiNumRounds(parseInt(e.target.value || '10', 10))} className="w-16" />
                     </label>
-                    <label className="inline-flex items-center gap-1">Min targets
+                    <label className="inline-flex items-center gap-1">Min number of words
                       <Input type="number" min={1} max={10} value={aiMinTargets} onChange={(e) => setAiMinTargets(parseInt(e.target.value || '6', 10))} className="w-16" />
                     </label>
-                    <label className="inline-flex items-center gap-1">Max targets
+                    <label className="inline-flex items-center gap-1">Max number of words
                       <Input type="number" min={aiMinTargets} max={12} value={aiMaxTargets} onChange={(e) => setAiMaxTargets(parseInt(e.target.value || '10', 10))} className="w-16" />
                     </label>
                     <Button type="button" variant="primary" className="ml-auto" disabled={aiBusy || !aiText.trim()} onClick={async () => {

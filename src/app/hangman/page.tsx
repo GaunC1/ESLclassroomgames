@@ -35,6 +35,7 @@ export default function HangmanPage() {
   const [aiText, setAiText] = useState<string>("");
   const [aiBusy, setAiBusy] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+  const [aiWordCount, setAiWordCount] = useState<number>(12);
 
   // Gameplay
   const [currentIndex, setCurrentIndex] = useState<number>(0);
@@ -240,11 +241,21 @@ export default function HangmanPage() {
                 <Card>
                   <GameChooser
                     selectedId={selectedGameId}
-                    onSelect={(id) => { setSelectedGameId(id); loadSelectedGameWords(id); }}
+                    onSelect={(id) => {
+                      if (id == null) {
+                        setSelectedGameId(null)
+                        setWords([])
+                        return
+                      }
+                      setSelectedGameId(id)
+                      loadSelectedGameWords(id)
+                    }}
                     onError={setGamesError}
                     onLoaded={() => {}}
                     kind="HANGMAN"
                     endpoint="/api/hangman/games"
+                    onCreateBuild={() => { setMode('build'); setSetupStep('configure'); }}
+                    onCreateGenerate={() => { setMode('generate'); setSetupStep('configure'); }}
                     onEdit={async (id) => {
                       try {
                         const res = await fetch(`/api/hangman/games/${id}`)
@@ -289,6 +300,21 @@ export default function HangmanPage() {
                 <Card title="Generate words from text (AI)" accent="#E1C2FF">
                   <TextArea value={aiText} onChange={(e) => setAiText(e.target.value)} placeholder="Paste a short text here (1–3 paragraphs)" />
                   <div className="flex items-center gap-2">
+                    <div className="flex items-center gap-2">
+                      <label className="text-xs text-gray-700">Number of words</label>
+                      <Input
+                        type="number"
+                        min={1}
+                        max={100}
+                        value={aiWordCount}
+                        onChange={(e) => setAiWordCount(() => {
+                          const v = parseInt(e.target.value || '0', 10)
+                          if (Number.isNaN(v)) return 1
+                          return Math.max(1, Math.min(100, v))
+                        })}
+                        className="w-24"
+                      />
+                    </div>
                     <Button
                       type="button"
                       variant="primary"
@@ -299,7 +325,14 @@ export default function HangmanPage() {
                           setAiError(null);
                           const res = await fetch('/api/ai/generate', {
                             method: 'POST', headers: { 'Content-Type': 'application/json' },
-                            body: JSON.stringify({ text: aiText })
+                            body: JSON.stringify({
+                              text: aiText,
+                              config: {
+                                NUM_ROUNDS: 1,
+                                MIN_TARGETS_PER_ROUND: aiWordCount,
+                                MAX_TARGETS_PER_ROUND: aiWordCount,
+                              },
+                            })
                           });
                           const data = await res.json();
                           if (!res.ok) throw new Error(data?.error || 'Failed to generate');
