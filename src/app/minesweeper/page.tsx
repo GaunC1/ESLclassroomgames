@@ -1,5 +1,6 @@
 "use client";
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
+import Image from 'next/image'
 import Link from 'next/link'
 import { Button } from '@/components/ui/Button'
 import { Card } from '@/components/ui/Card'
@@ -80,7 +81,7 @@ export default function MinesweeperPage() {
     '#D9E5C9','#E6D4D4','#D4E6E6','#E6E4D4','#D4E6D8','#E6D4E0','#D4D9E6','#E3D6C9'
   ], [])
 
-  function shuffle<T>(arr: T[]): T[] { const a = arr.slice(); for (let i=a.length-1;i>0;i--){ const j=Math.floor(Math.random()*(i+1)); [a[i],a[j]]=[a[j],a[i]] } return a }
+  
 
   async function loadSet(id: number) {
     try {
@@ -100,7 +101,7 @@ export default function MinesweeperPage() {
           })
         : []
       setQuestions(qs)
-    } catch (e) { setGamesError('Could not load selected set') }
+    } catch { setGamesError('Could not load selected set') }
   }
 
   async function saveSet() {
@@ -183,7 +184,7 @@ export default function MinesweeperPage() {
       ;[arr[i], arr[j]] = [arr[j], arr[i]]
     }
     return arr
-  }, [qIndex, questions.length])
+  }, [qIndex, questions])
 
   // Compute a single label position per contiguous territory (owner-connected component)
   const labelPositions = useMemo(() => {
@@ -416,7 +417,7 @@ export default function MinesweeperPage() {
                         setNewDesc(data.description || '')
                         setSelectedSetId(id)
                         setMode('build')
-                      } catch (e) {}
+                      } catch {}
                     }}
                   />
                   {gamesError && <div className="text-xs text-rose-600">{gamesError}</div>}
@@ -657,7 +658,11 @@ export default function MinesweeperPage() {
                         </div>
                       )}
                       <div className="text-base">{currentQ.prompt}</div>
-                      {currentQ.imageUrl && <img src={currentQ.imageUrl} alt="" className="max-h-48 rounded" />}
+                      {currentQ.imageUrl && (
+                        <div className="relative max-h-48">
+                          <Image src={currentQ.imageUrl} alt="Question image" width={800} height={450} className="rounded max-h-48 w-auto h-auto" />
+                        </div>
+                      )}
                       <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
                         {choiceOrder.map((idx, i) => (
                           <button key={`${qIndex}-${idx}`}

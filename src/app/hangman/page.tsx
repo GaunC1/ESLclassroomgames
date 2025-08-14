@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useMemo, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -120,7 +120,7 @@ export default function HangmanPage() {
         ? ((data as { words: unknown[] }).words).map((t) => String(t))
         : [];
       setWords(Array.from(new Set(w)) as string[]);
-    } catch (e) {
+    } catch {
       setGamesError('Could not load selected game');
     }
   }
@@ -183,14 +183,7 @@ export default function HangmanPage() {
     }
   }
 
-  function nextAliveTeamIndex(lv: number[], from: number) {
-    if (!teams.length) return -1;
-    for (let step = 1; step <= teams.length; step++) {
-      const idx = (from + step) % teams.length;
-      if ((lv[idx] || 0) > 0) return idx;
-    }
-    return -1;
-  }
+  // nextAliveTeamIndex removed (unused)
 
   function endRound(solvedRound: boolean) {
     if (solvedRound) {
@@ -263,7 +256,7 @@ export default function HangmanPage() {
                         setNewGameDesc(data.description || '')
                         setSelectedGameId(id)
                         setMode('build')
-                      } catch (e) {}
+                      } catch {}
                     }}
                   />
                   {gamesError && <div className="text-xs text-rose-600">{gamesError}</div>}

@@ -31,7 +31,7 @@ export function GameChooser({ selectedId, onSelect, onLoaded, onError, kind = 'S
           onError(null)
           setLoading(false)
         }
-      } catch (e) {
+      } catch {
         if (!cancelled) {
           onError('Could not load games list')
           setLoading(false)
@@ -40,7 +40,7 @@ export function GameChooser({ selectedId, onSelect, onLoaded, onError, kind = 'S
     }
     load()
     return () => { cancelled = true }
-  }, [])
+  }, [endpoint, kind, onLoaded, onError])
 
   if (loading) return <div className="text-xs text-gray-500">Loading games…</div>
   if (!games.length) return (
@@ -76,7 +76,7 @@ export function GameChooser({ selectedId, onSelect, onLoaded, onError, kind = 'S
                   type="button"
                   aria-label="Edit game"
                   className="p-1 rounded hover:bg-gray-50 text-gray-700"
-                  onClick={(e) => { e.stopPropagation(); onEdit ? onEdit(g.id) : onSelect(g.id) }}
+              onClick={(e) => { e.stopPropagation(); if (onEdit) { onEdit(g.id) } else { onSelect(g.id) } }}
                 >
                   <svg xmlns="http://www.w3.org/2000/svg" width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
                     <path d="M12 20h9" />
@@ -100,7 +100,7 @@ export function GameChooser({ selectedId, onSelect, onLoaded, onError, kind = 'S
                         if (selectedId === g.id) onSelect(next[0]?.id ?? null)
                         return next
                       })
-                    } catch (err) {
+                    } catch {
                       onError('Could not delete game')
                       setTimeout(() => onError(null), 1500)
                     }

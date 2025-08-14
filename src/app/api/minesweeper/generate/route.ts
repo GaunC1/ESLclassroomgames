@@ -60,7 +60,7 @@ export async function POST(req: Request) {
       ],
       text: {
         // Cast schema to unknown to avoid 'any' while satisfying SDK type
-        format: { type: 'json_schema', name: 'mcq_set', strict: true, schema: schema as unknown },
+        format: { type: 'json_schema', name: 'mcq_set', strict: true, schema: schema as Record<string, unknown> },
       },
     })
 

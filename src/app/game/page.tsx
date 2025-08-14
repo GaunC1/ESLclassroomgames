@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -10,7 +10,7 @@ import { SectionHeader } from "@/components/ui/SectionHeader";
 import { SelectionCard } from "@/components/ui/SelectionCard";
 import { GameChooser } from "@/components/game/GameChooser";
 import { CustomRoundsEditor } from "@/components/game/CustomRoundsEditor";
-import type { Round, GameListItem } from "@/types/game";
+import type { Round } from "@/types/game";
 import { clamp, scoreSentence } from "@/lib/scoring";
 
 // Round type is shared
@@ -56,8 +56,6 @@ export default function GamePage() {
   const [phase, setPhase] = useState<Phase>("prompt");
 
   // Available games from DB (choose mode)
-  type GameListItem = { id: number; name: string; description?: string | null; roundsCount: number };
-  const [games, setGames] = useState<GameListItem[]>([]);
   const [selectedGameId, setSelectedGameId] = useState<number | null>(null);
   const [gamesError, setGamesError] = useState<string | null>(null);
   const [newGameName, setNewGameName] = useState<string>("");
@@ -122,7 +120,7 @@ export default function GamePage() {
         if (mapped.length) {
           resolved = mapped;
         }
-      } catch (e: unknown) {
+      } catch {
         setGamesError('Could not load selected game. Falling back to default rounds.');
       }
     }
@@ -167,14 +165,8 @@ export default function GamePage() {
       if (!res.ok) throw new Error(data?.error || 'Failed to save');
       setSaveMsg('Saved!');
       setSelectedGameId(data.id);
-      // Refresh list
-      try {
-        const listRes = await fetch('/api/games');
-        if (listRes.ok) {
-          const list = await listRes.json();
-          setGames(list);
-        }
-      } catch {}
+      // Optionally refresh list in chooser (handled by GameChooser on next open)
+      try { await fetch('/api/games') } catch {}
       } catch (e: unknown) {
       const msg = typeof (e as { message?: unknown })?.message === 'string' ? (e as { message: string }).message : 'Could not save game'
       setCustomError(msg);
@@ -184,14 +176,14 @@ export default function GamePage() {
   }
 
   // Derived totals
-  const finalScore = (ti: number, ri: number) => {
+  const finalScore = useCallback((ti: number, ri: number) => {
     const base = scoreSentence(sentences[ti]?.[ri] ?? "", rounds[ri].targets).score;
     const pen = penalties[ti]?.[ri] ?? 0;
     return clamp(base - pen, 0);
-  };
+  }, [sentences, rounds, penalties]);
   const perTeamTotals = useMemo(
     () => teams.map((_, ti) => rounds.reduce((sum, _r, ri) => sum + finalScore(ti, ri), 0)),
-    [teams, rounds, sentences, penalties]
+    [teams, rounds, finalScore]
   );
 
   // Timer effect
@@ -275,7 +267,6 @@ export default function GamePage() {
                     onSelect={setSelectedGameId}
                     onError={setGamesError}
                     onLoaded={(list) => {
-                      setGames(list);
                       if (list.length && selectedGameId == null) setSelectedGameId(list[0].id);
                     }}
                     kind="SENTENCE"
@@ -299,7 +290,7 @@ export default function GamePage() {
                         setNewGameDesc(data.description || '')
                         setSelectedGameId(id)
                         setMode('build')
-                      } catch (_e) {}
+                      } catch {}
                     }}
                   />
                   {gamesError && <div className="text-xs text-rose-600">{gamesError}</div>}

@@ -34,7 +34,7 @@ export async function POST(req: Request) {
     const kind: GameKind = (body?.kind === 'HANGMAN' || body?.kind === 'SENTENCE') ? (body.kind as GameKind) : 'SENTENCE'
 
     if (!name) return NextResponse.json({ error: 'Name is required' }, { status: 400 })
-    if (!rounds.length) return NextResponse.json({ error: 'At least one round is required' }, { status: 400 })
+    if (!roundsRaw.length) return NextResponse.json({ error: 'At least one round is required' }, { status: 400 })
 
     const roundCreates = roundsRaw.map((r: unknown, idx: number) => {
       const obj = (r ?? {}) as Record<string, unknown>

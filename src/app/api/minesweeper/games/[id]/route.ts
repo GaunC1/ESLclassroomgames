@@ -1,13 +1,12 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
+/* eslint-disable @typescript-eslint/no-explicit-any */
 
 function parseChoices(s: string): string[] {
   try { const v = JSON.parse(s); return Array.isArray(v) ? v.map(String) : [] } catch { return [] }
 }
 
-type IdParams = { params: { id: string } }
-
-export async function GET(_req: Request, context: IdParams) {
+export async function GET(_req: Request, context: any) {
   const id = Number(context?.params?.id)
   if (!Number.isFinite(id)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
 
@@ -32,7 +31,7 @@ export async function GET(_req: Request, context: IdParams) {
   })
 }
 
-export async function DELETE(_req: Request, context: IdParams) {
+export async function DELETE(_req: Request, context: any) {
   const id = Number(context?.params?.id)
   if (!Number.isFinite(id)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
   // delete questions first

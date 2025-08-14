@@ -91,7 +91,7 @@ export async function generateGameFromText(options: {
         type: 'json_schema',
         name: 'esl_sentence_writing_game',
         strict: true,
-        schema: jsonSchema as unknown,
+        schema: jsonSchema as Record<string, unknown>,
       },
     },
   })

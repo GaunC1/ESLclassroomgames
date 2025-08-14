@@ -1,5 +1,5 @@
 "use client";
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Card } from "@/components/ui/Card";
 
 export type RandomCandidate = {
@@ -33,11 +33,9 @@ export function RandomPlayerChooser({
   const timeoutRef = useRef<number | null>(null);
 
   // Weighted random: weight 2 if never picked, else 1
-  function pickWeighted(): number | null {
+  const pickWeighted = useCallback((): number | null => {
     if (!candidates.length) return null;
-    const weights = candidates.map((c) =>
-      pickedBefore?.has(c.id) ? 1 : 2
-    );
+    const weights = candidates.map((c) => (pickedBefore?.has(c.id) ? 1 : 2));
     const total = weights.reduce((a, b) => a + b, 0);
     let r = Math.random() * total;
     for (let i = 0; i < candidates.length; i++) {
@@ -45,7 +43,7 @@ export function RandomPlayerChooser({
       if (r <= 0) return candidates[i].id;
     }
     return candidates[candidates.length - 1].id;
-  }
+  }, [candidates, pickedBefore]);
 
   useEffect(() => {
     if (!candidates.length) return;
@@ -99,7 +97,7 @@ export function RandomPlayerChooser({
       rafRef.current = null;
       timeoutRef.current = null;
     };
-  }, [candidates, durationMs, holdMs]);
+  }, [candidates, durationMs, holdMs, onChosen, pickWeighted]);
 
   if (!candidates.length) return null;
 
@@ -157,4 +155,3 @@ export function RandomPlayerChooser({
     </div>
   );
 }
-
