@@ -9,6 +9,7 @@ import { SectionHeader } from '@/components/ui/SectionHeader'
 import { SelectionCard } from '@/components/ui/SelectionCard'
 import { GameChooser } from '@/components/game/GameChooser'
 import { QuestionSetEditor, type MCQuestion } from '@/components/minesweeper/QuestionSetEditor'
+import { RandomPlayerChooser } from '@/components/game/RandomPlayerChooser'
 
 type SetupStep = 'select' | 'configure' | 'teams'
 type Mode = 'choose' | 'build' | 'generate' | null
@@ -57,15 +58,7 @@ export default function MinesweeperPage() {
   const [mergeTargetOwner, setMergeTargetOwner] = useState<number | null>(null)
   const [nextPlayerAfterMerge, setNextPlayerAfterMerge] = useState<number | null>(null)
   // Slot machine animation state (smooth)
-  const [slotProgress, setSlotProgress] = useState<number>(0) // fractional index progress through aliveOrder
-  const [slotTarget, setSlotTarget] = useState<number | null>(null)
-  const slotAnimFrameRef = useRef<number | null>(null)
-  const slotStartTimeRef = useRef<number | null>(null)
-  const slotDurationRef = useRef<number>(0)
-  const slotStartRef = useRef<number>(0)
-  const slotDistanceRef = useRef<number>(0)
-  const [slotHolding, setSlotHolding] = useState<boolean>(false)
-  const slotHoldTimeoutRef = useRef<number | null>(null)
+  // Random player chooser is now a reusable component
 
   // Disable page scrolling during gameplay overlays (not during setup)
   useEffect(() => {
@@ -172,16 +165,7 @@ export default function MinesweeperPage() {
     return { rows: best.rows, cols: best.cols, grid }
   }
 
-  // Weighted random: weight 2 if never picked, else 1
-  function pickRandomPlayer() {
-    const candidates = teams.map((_, i) => i).filter((i) => alive[i])
-    if (!candidates.length) return null
-    const weights = candidates.map((i) => (pickedBefore.has(i) ? 1 : 2))
-    const total = weights.reduce((a, b) => a + b, 0)
-    let r = Math.random() * total
-    for (let i = 0; i < candidates.length; i++) { r -= weights[i]; if (r <= 0) return candidates[i] }
-    return candidates[candidates.length - 1]
-  }
+  // Random player chooser moved to component
 
   // Compute shuffled choice order for current question before render to avoid flash
   const choiceOrder = useMemo(() => {
@@ -253,73 +237,8 @@ export default function MinesweeperPage() {
     return s
   }, [grid, rows, cols])
 
-  // Slot machine animation to choose next player (smooth RAF with easing)
+  // Alive order for chooser
   const aliveOrder = useMemo(() => teams.map((_, i) => i).filter((i) => alive[i]), [teams, alive])
-  useEffect(() => {
-    if (isSetup || phase !== 'slot' || aliveOrder.length === 0) return
-
-    const target = pickRandomPlayer()
-    if (target == null) return
-    setSlotTarget(target)
-
-    const len = aliveOrder.length
-    const start = Math.random() * len
-    const targetPos = aliveOrder.indexOf(target)
-    const startFloor = Math.floor(start) % len
-    const startFrac = start - Math.floor(start)
-    const stepsToTarget = (targetPos - startFloor + len) % len
-    const cycles = 2 * len // start slower overall (fewer cycles)
-    // Ensure final progress lands exactly on target row center (integer + 0.5)
-    // We start at start+0.5 and add distance so final = cycles + startFloor + stepsToTarget + 0.5
-    const distance = cycles + stepsToTarget - startFrac
-    const duration = 3500 // ms, half as long total duration
-
-    // Start centered on a row
-    slotStartRef.current = start + 0.5
-    slotDistanceRef.current = distance
-    slotDurationRef.current = duration
-    slotStartTimeRef.current = null
-
-    // Linear deceleration: starts at constant speed and only slows down
-    // Integrated form of v(t) = v0 * (1 - t/T) gives progress factor f(u) = 2u - u^2
-    function decel(u: number) { return 2 * u - u * u }
-    function tick(ts: number) {
-      if (slotStartTimeRef.current == null) slotStartTimeRef.current = ts
-      const elapsed = ts - (slotStartTimeRef.current ?? 0)
-      const u = Math.min(1, elapsed / (slotDurationRef.current || 1))
-      const factor = decel(u)
-      const progress = (slotStartRef.current || 0) + (slotDistanceRef.current || 0) * factor
-      setSlotProgress(progress)
-      if (u < 1) {
-        slotAnimFrameRef.current = requestAnimationFrame(tick)
-      } else {
-        // Snap to exact final position and compute landed team from center slot
-        const finalProg = (slotStartRef.current || 0) + (slotDistanceRef.current || 0)
-        setSlotProgress(finalProg)
-        const lenNow = aliveOrder.length || 1
-        const centerIndex = ((Math.floor(finalProg) % lenNow) + lenNow) % lenNow
-        const landedTeam = aliveOrder[centerIndex]
-        setCurrentPlayer(landedTeam)
-        setPickedBefore((prev) => new Set(prev).add(landedTeam))
-        setSelectedChoice(null)
-        setSelectedForQIndex(null)
-        setSlotHolding(true)
-        // Pause for 1000ms to showcase the chosen team before moving to question
-        if (slotHoldTimeoutRef.current) window.clearTimeout(slotHoldTimeoutRef.current)
-        slotHoldTimeoutRef.current = window.setTimeout(() => {
-          setSlotHolding(false)
-          setPhase('question')
-        }, 1000)
-      }
-    }
-    slotAnimFrameRef.current = requestAnimationFrame(tick)
-
-    return () => {
-      if (slotAnimFrameRef.current != null) cancelAnimationFrame(slotAnimFrameRef.current)
-      slotAnimFrameRef.current = null
-      if (slotHoldTimeoutRef.current) { window.clearTimeout(slotHoldTimeoutRef.current); slotHoldTimeoutRef.current = null }
-    }
-  }, [phase, isSetup, aliveOrder.length])
 
   function answerQuestion(idx: number) {
     const q = questions[qIndex % questions.length]
@@ -740,58 +659,17 @@ export default function MinesweeperPage() {
 
               {/* Slot machine overlay: smooth track with linear deceleration */}
               {phase === 'slot' && aliveOrder.length > 0 && (
-                <div className="absolute inset-0 flex items-center justify-center">
-                  <div className="absolute inset-0" />
-                  <Card className="relative max-w-md w-[min(92vw,640px)] m-4">
-                    <div className="relative overflow-hidden" style={{ height: 320 }}>
-                      {/* Center band */}
-                      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-10 border-y border-emerald-400/60 pointer-events-none" />
-                      {/* Top/bottom gradient fades */}
-                      <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/90 to-white/0" />
-                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white/90 to-white/0" />
-                      {/* Repeated track */}
-                      {(() => {
-                        const len = aliveOrder.length
-                        const REPEAT = 40
-                        const rowH = 42
-                        const centerY = 160 // 320/2
-                        const total = len * REPEAT
-                        const seq = Array.from({ length: total }, (_, i) => aliveOrder[i % len])
-                        const translateY = centerY - (slotProgress * rowH)
-                        return (
-                          <div className="absolute inset-0 overflow-hidden">
-                            <div className="will-change-transform" style={{ transform: `translateY(${translateY}px)` }}>
-                              {seq.map((teamIdx, i) => {
-                                const deltaRows = Math.abs(i - slotProgress)
-                                const isCenter = deltaRows < 0.5
-                                const scale = isCenter ? 1.12 : 1
-                                const glow = isCenter ? '0 0 0 3px rgba(16,185,129,0.45)' : undefined
-                                const borderColor = isCenter ? '#10b981' : teamColors[teamIdx]
-                                const textColor = isCenter ? '#065f46' : undefined
-                                return (
-                                  <div key={`slot-row-${i}`} className="flex items-center justify-center" style={{ height: rowH }}>
-                                    <span
-                                      className="inline-flex items-center gap-2 px-2 py-1 rounded-full border bg-white/95 transition"
-                                      style={{
-                                        borderColor,
-                                        boxShadow: glow,
-                                        transform: `scale(${scale})`,
-                                        color: textColor,
-                                      }}
-                                    >
-                                      <span className="w-2 h-2 rounded-full" style={{ background: borderColor }} />
-                                      <span className="truncate max-w-[14rem] sm:max-w-xs font-semibold">{teams[teamIdx]}</span>
-                                    </span>
-                                  </div>
-                                )
-                              })}
-                            </div>
-                          </div>
-                        )
-                      })()}
-                    </div>
-                  </Card>
-                </div>
+                <RandomPlayerChooser
+                  candidates={aliveOrder.map((i) => ({ id: i, label: teams[i], color: teamColors[i] }))}
+                  pickedBefore={pickedBefore}
+                  onChosen={(landedTeam) => {
+                    setCurrentPlayer(landedTeam)
+                    setPickedBefore((prev) => new Set(prev).add(landedTeam))
+                    setSelectedChoice(null)
+                    setSelectedForQIndex(null)
+                    setPhase('question')
+                  }}
+                />
               )}
 
               {/* Next player banner at top; grid remains unblurred and visible */}

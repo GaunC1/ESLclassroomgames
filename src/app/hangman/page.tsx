@@ -10,6 +10,7 @@ import { SectionHeader } from "@/components/ui/SectionHeader";
 import { SelectionCard } from "@/components/ui/SelectionCard";
 import { GameChooser } from "@/components/game/GameChooser";
 import { WordListEditor } from "@/components/game/WordListEditor";
+import { RandomPlayerChooser } from "@/components/game/RandomPlayerChooser";
 
 type SetupStep = 'select' | 'configure' | 'teams';
 type Mode = 'choose' | 'build' | 'generate' | null;
@@ -45,13 +46,14 @@ export default function HangmanPage() {
   const [scores, setScores] = useState<number[]>([]);
   const [roundPoints, setRoundPoints] = useState<number[]>([]);
   const [lives, setLives] = useState<number[]>([]);
-  const [maxLives] = useState<number>(3);
-  const [showTurnBanner, setShowTurnBanner] = useState(false);
-  const turnTimerRef = useRef<number | null>(null);
+  const [maxLives] = useState<number>(6);
   const [guessFeedback, setGuessFeedback] = useState<null | 'wrong'>(null);
   const [remaining, setRemaining] = useState<number[]>([]);
   // derive current word number from remaining
   const [finished, setFinished] = useState<boolean>(false);
+  // Random chooser state
+  const [choosingTurn, setChoosingTurn] = useState<boolean>(false);
+  const [pickedBefore, setPickedBefore] = useState<Set<number>>(new Set());
 
   const alphabet = useMemo(() => "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("") as string[], []);
   const currentWord = (words[currentIndex] || "").toUpperCase();
@@ -79,19 +81,18 @@ export default function HangmanPage() {
     const [first, ...rest] = order;
     setRemaining(rest);
     setCurrentIndex(first ?? 0);
-    // initialize first round state
-    setCurrentTeamIndex(0);
+    // initialize first round state (starting team chosen randomly via chooser)
     setGuessed(new Set());
     setWrong(new Set());
     setRoundPoints(Array.from({ length: cleanedTeams.length }, () => 0));
     setLives(Array.from({ length: cleanedTeams.length }, () => maxLives));
     setFinished(false);
+    setPickedBefore(new Set());
     setIsSetup(false);
+    setChoosingTurn(true);
   }
 
-  function startNewRound(teamCount = teams.length, nextStarter?: number) {
-    const starter = typeof nextStarter === 'number' ? nextStarter : 0;
-    setCurrentTeamIndex(starter);
+  function startNewRound(teamCount = teams.length) {
     setGuessed(new Set());
     setWrong(new Set());
     setRoundPoints(Array.from({ length: teamCount }, () => 0));
@@ -105,6 +106,9 @@ export default function HangmanPage() {
       setCurrentIndex(next);
       return rest;
     });
+    // reset chooser weighting each round and pick a random starting team
+    setPickedBefore(new Set());
+    setChoosingTurn(true);
   }
 
   async function loadSelectedGameWords(id: number) {
@@ -161,19 +165,16 @@ export default function HangmanPage() {
       const newLives = [...lives];
       newLives[currentTeamIndex] = Math.max(0, (newLives[currentTeamIndex] || 0) - 1);
       setLives(newLives);
-      // show wrong feedback, then move turn
+      // show wrong feedback, then move turn via random chooser
       setGuessFeedback('wrong');
       window.setTimeout(() => {
         const died = (newLives[currentTeamIndex] || 0) <= 0;
         if (died) {
           setRoundPoints((rp) => rp.map((p, i) => (i === currentTeamIndex ? 0 : p)));
         }
-        const nextIdx = nextAliveTeamIndex(newLives, currentTeamIndex);
-        if (nextIdx === -1) {
-          endRound(false);
-        } else {
-          setCurrentTeamIndex(nextIdx);
-        }
+        const anyAlive = newLives.some((v) => (v || 0) > 0);
+        if (!anyAlive) { endRound(false); }
+        else { setChoosingTurn(true); }
         setGuessFeedback(null);
       }, 800);
     }
@@ -193,24 +194,14 @@ export default function HangmanPage() {
       // add round points to totals
       setScores((prev) => prev.map((s, i) => s + (roundPoints[i] || 0)));
     }
-    // start next round; rotate starting team for fairness
-    const nextStarter = (currentTeamIndex + 1) % (teams.length || 1);
     if (remaining.length === 0) {
       setFinished(true);
     } else {
-      startNewRound(teams.length, nextStarter);
+      startNewRound(teams.length);
     }
   }
 
-  // Turn-change banner overlay
-  useEffect(() => {
-    if (isSetup || !teams.length) return;
-    setShowTurnBanner(true);
-    if (turnTimerRef.current) window.clearTimeout(turnTimerRef.current);
-    turnTimerRef.current = window.setTimeout(() => setShowTurnBanner(false), 1100);
-    // cleanup not strictly needed
-    return () => { if (turnTimerRef.current) window.clearTimeout(turnTimerRef.current); };
-  }, [currentTeamIndex, isSetup, teams.length]);
+  // Old turn-change banner removed in favor of RandomPlayerChooser
 
   // Setup view
   if (isSetup) {
@@ -418,6 +409,7 @@ return (
               {teams.map((t, i) => {
                 const active = i === currentTeamIndex;
                 const accent = accents[i % accents.length];
+                const displayScore = (scores[i] || 0) + (roundPoints[i] || 0);
                 return (
                   <div
                     key={t + i}
@@ -427,7 +419,9 @@ return (
                     <div className="text-xs font-bold">{t}</div>
                     <div className="mt-1 flex items-center gap-1">
                       <span className="text-[10px] text-gray-700">Score:</span>
-                      <span className="inline-flex items-center justify-center min-w-6 px-1.5 py-0.5 rounded-full bg-black text-white text-[10px] font-bold">{scores[i] || 0}</span>
+                      <span className="inline-flex items-center justify-center min-w-6 px-1.5 py-0.5 rounded-full bg-black text-white text-[10px] font-bold">
+                        {displayScore}
+                      </span>
                     </div>
                     <div className="mt-1" aria-label={`Lives remaining: ${lives[i] ?? maxLives}`}>
                       <HangmanMini stage={Math.max(0, maxLives - (lives[i] ?? maxLives))} color={accent} size={64} />
@@ -451,7 +445,7 @@ return (
                     size="sm"
                     variant={used ? 'ghost' : 'secondary'}
                     className={used ? (isCorrect ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white') : ''}
-                    disabled={used}
+                    disabled={used || choosingTurn}
                     onClick={() => guessLetter(ch)}
                   >
                     {ch}
@@ -485,14 +479,19 @@ return (
             </Card>
           )}
         </div>
-        {showTurnBanner && (
-          <div className="fixed inset-0 z-40 bg-white/30 backdrop-blur-sm flex items-center justify-center">
-            <div className="rounded-xl border bg-white shadow-lg px-6 py-4 text-center">
-              <div className="text-xs text-gray-600 mb-1">It\'s now</div>
-              <div className="text-lg font-semibold">{teams[currentTeamIndex] || 'Team'}</div>
-              <div className="text-xs text-gray-600 mt-1">turn</div>
-            </div>
-          </div>
+        {/* Old turn banner removed */}
+        {/* Random player chooser overlay for selecting next team */}
+        {choosingTurn && teams.length > 0 && (
+          <RandomPlayerChooser
+            candidates={teams.map((t, i) => ({ id: i, label: t, color: accents[i % accents.length] }))
+              .filter((c) => (lives[c.id] || 0) > 0)}
+            pickedBefore={pickedBefore}
+            onChosen={(teamId) => {
+              setCurrentTeamIndex(teamId);
+              setPickedBefore((prev) => new Set(prev).add(teamId));
+              setChoosingTurn(false);
+            }}
+          />
         )}
         {guessFeedback === 'wrong' && (
           <div className="fixed inset-0 z-50 flex items-center justify-center pointer-events-none">
@@ -505,8 +504,8 @@ return (
 }
 
 function HangmanMini({ stage, color = '#111', size = 72 }: { stage: number; color?: string; size?: number }) {
-  // stage: 0 = none, 1 = head+body, 2 = +arms, 3 = +legs
-  const s = Math.max(0, Math.min(3, Math.floor(stage || 0)));
+  // stage: 0 = none, 1=head, 2=+body, 3=+left arm, 4=+right arm, 5=+left leg, 6=+right leg
+  const s = Math.max(0, Math.min(6, Math.floor(stage || 0)));
   const gallows = '#9ca3af';
   return (
     <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -515,25 +514,19 @@ function HangmanMini({ stage, color = '#111', size = 72 }: { stage: number; colo
       <line x1="16" y1="58" x2="16" y2="8" stroke={gallows} strokeWidth="3" />
       <line x1="16" y1="8" x2="40" y2="8" stroke={gallows} strokeWidth="3" />
       <line x1="40" y1="8" x2="40" y2="14" stroke={gallows} strokeWidth="3" />
-      {/* man */}
-      {s >= 1 && (
-        <>
-          <circle cx="40" cy="20" r="6" stroke={color} strokeWidth="3" fill="none" />
-          <line x1="40" y1="26" x2="40" y2="40" stroke={color} strokeWidth="3" />
-        </>
-      )}
-      {s >= 2 && (
-        <>
-          <line x1="40" y1="30" x2="32" y2="36" stroke={color} strokeWidth="3" />
-          <line x1="40" y1="30" x2="48" y2="36" stroke={color} strokeWidth="3" />
-        </>
-      )}
-      {s >= 3 && (
-        <>
-          <line x1="40" y1="40" x2="34" y2="54" stroke={color} strokeWidth="3" />
-          <line x1="40" y1="40" x2="46" y2="54" stroke={color} strokeWidth="3" />
-        </>
-      )}
+      {/* man drawn in 6 steps */}
+      {/* 1: head */}
+      {s >= 1 && <circle cx="40" cy="20" r="6" stroke={color} strokeWidth="3" fill="none" />}
+      {/* 2: body */}
+      {s >= 2 && <line x1="40" y1="26" x2="40" y2="40" stroke={color} strokeWidth="3" />}
+      {/* 3: left arm */}
+      {s >= 3 && <line x1="40" y1="30" x2="32" y2="36" stroke={color} strokeWidth="3" />}
+      {/* 4: right arm */}
+      {s >= 4 && <line x1="40" y1="30" x2="48" y2="36" stroke={color} strokeWidth="3" />}
+      {/* 5: left leg */}
+      {s >= 5 && <line x1="40" y1="40" x2="34" y2="54" stroke={color} strokeWidth="3" />}
+      {/* 6: right leg */}
+      {s >= 6 && <line x1="40" y1="40" x2="46" y2="54" stroke={color} strokeWidth="3" />}
     </svg>
   );
 }

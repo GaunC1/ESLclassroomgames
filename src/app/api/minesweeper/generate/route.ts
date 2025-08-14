@@ -28,10 +28,11 @@ export async function POST(req: Request) {
           items: {
             type: 'object',
             additionalProperties: false,
-            required: ['prompt', 'choices', 'correctIndex'],
+            // Strict schema requires listing every property in `required`
+            required: ['prompt', 'choices', 'correctIndex', 'explanation', 'imageUrl'],
             properties: {
               prompt: { type: 'string' },
-              choices: { type: 'array', minItems: 2, maxItems: 6, items: { type: 'string' } },
+              choices: { type: 'array', minItems: choicesPerQuestion, maxItems: choicesPerQuestion, items: { type: 'string' } },
               correctIndex: { type: 'integer', minimum: 0 },
               explanation: { type: 'string' },
               imageUrl: { type: 'string' },
@@ -46,6 +47,7 @@ export async function POST(req: Request) {
     const instructions = [
       `Create ${numQuestions} questions. Each with exactly ${choicesPerQuestion} choices.`,
       'Use simple, clear wording. Include plausible distractors. Avoid trick questions. Keep answers grounded in the provided text or basic vocabulary.',
+      'Always include keys: prompt, choices, correctIndex, explanation, imageUrl. Use empty string for explanation/imageUrl when not needed.',
       name || description ? `If name/description provided, prefer them.` : '',
     ].filter(Boolean).join('\n')
 
@@ -77,4 +79,3 @@ function clampInt(v: any, min: number, max: number): number | undefined {
   if (!Number.isFinite(n)) return undefined
   return Math.max(min, Math.min(max, Math.floor(n)))
 }
-
