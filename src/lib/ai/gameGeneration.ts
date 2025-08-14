@@ -64,7 +64,7 @@ export async function generateGameFromText(options: {
     ? `Use this name/description if present:\nNAME=${name ?? ''}\nDESCRIPTION=${description ?? ''}`
     : ''
 
-  const resp: any = await openai.responses.create({
+  const resp: unknown = await openai.responses.create({
     model,
     input: [
       {
@@ -91,22 +91,23 @@ export async function generateGameFromText(options: {
         type: 'json_schema',
         name: 'esl_sentence_writing_game',
         strict: true,
-        schema: jsonSchema as any,
+        schema: jsonSchema as unknown,
       },
     },
   })
 
-  const out = (resp as any).output?.[0]
+  type OutputChunk = { type?: unknown; text?: unknown }
+  type ResponseLike = { output?: unknown; output_text?: unknown }
+  const r = resp as ResponseLike
   let jsonText: string | undefined
-  if (out && out.type === 'output_text') {
-    jsonText = (out as any).text
-  } else if ((resp as any).output_text) {
-    jsonText = (resp as any).output_text
+  if (Array.isArray(r.output) && r.output.length > 0) {
+    const first = r.output[0] as OutputChunk
+    if (first && first.type === 'output_text' && typeof first.text === 'string') jsonText = first.text
   }
+  if (!jsonText && typeof r.output_text === 'string') jsonText = r.output_text
   if (!jsonText) throw new Error('No JSON returned')
 
   const parsed = JSON.parse(jsonText)
   if (!parsed || !Array.isArray(parsed.rounds)) throw new Error('Invalid JSON shape from model')
   return parsed as GeneratedGame
 }
-

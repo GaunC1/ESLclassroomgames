@@ -40,13 +40,13 @@ export async function POST(req: Request) {
       description: providedDescription,
     })
     return NextResponse.json(result)
-  } catch (e: any) {
-    const msg = typeof e?.message === 'string' ? e.message : 'Failed to generate'
+  } catch (e: unknown) {
+    const msg = typeof (e as { message?: unknown })?.message === 'string' ? (e as { message: string }).message : 'Failed to generate'
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
-function toInt(v: any): number | undefined {
+function toInt(v: unknown): number | undefined {
   const n = Number(v)
   return Number.isFinite(n) ? n : undefined
 }

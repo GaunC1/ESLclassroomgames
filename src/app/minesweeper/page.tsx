@@ -87,13 +87,18 @@ export default function MinesweeperPage() {
       const res = await fetch(`/api/minesweeper/games/${id}`)
       if (!res.ok) throw new Error('Failed to load')
       const data = await res.json()
-      const qs: MCQuestion[] = Array.isArray(data?.questions) ? data.questions.map((q: any) => ({
-        prompt: String(q.prompt || ''),
-        choices: Array.isArray(q?.choices) ? q.choices.map((c: any) => String(c)) : [],
-        correctIndex: Number(q?.correctIndex ?? 0) || 0,
-        explanation: q?.explanation ? String(q.explanation) : undefined,
-        imageUrl: q?.imageUrl ? String(q.imageUrl) : undefined,
-      })) : []
+      const qs: MCQuestion[] = Array.isArray((data as { questions?: unknown })?.questions)
+        ? ((data as { questions: unknown[] }).questions).map((q) => {
+            const obj = (q ?? {}) as Record<string, unknown>
+            return {
+              prompt: String((obj as { prompt?: unknown }).prompt || ''),
+              choices: Array.isArray(obj?.choices) ? (obj.choices as unknown[]).map((c) => String(c)) : [],
+              correctIndex: Number((obj as { correctIndex?: unknown }).correctIndex ?? 0) || 0,
+              explanation: (obj as { explanation?: unknown }).explanation ? String((obj as { explanation?: unknown }).explanation) : undefined,
+              imageUrl: (obj as { imageUrl?: unknown }).imageUrl ? String((obj as { imageUrl?: unknown }).imageUrl) : undefined,
+            }
+          })
+        : []
       setQuestions(qs)
     } catch (e) { setGamesError('Could not load selected set') }
   }
@@ -110,8 +115,9 @@ export default function MinesweeperPage() {
       if (!res.ok) throw new Error(data?.error || 'Failed to save')
       setSaveMsg('Saved!')
       setSelectedSetId(data.id)
-    } catch (e: any) {
-      setSaveMsg(e?.message || 'Could not save')
+    } catch (e: unknown) {
+      const msg = typeof (e as { message?: unknown })?.message === 'string' ? (e as { message: string }).message : 'Could not save'
+      setSaveMsg(msg)
     } finally { setSaving(false) }
   }
 
@@ -142,7 +148,7 @@ export default function MinesweeperPage() {
       const score = Math.abs(r - c) + (cells - nTeams) // prefer square-ish and minimal slack
       if (cells >= nTeams && score < bestScore) { best = { rows: r, cols: c }; bestScore = score }
     }
-    let positions: { r: number; c: number }[] = []
+    const positions: { r: number; c: number }[] = []
     // place teams ensuring adjacency pairs
     if (best.cols >= 2) {
       outer: for (let r = 0; r < best.rows; r++) {
@@ -393,13 +399,18 @@ export default function MinesweeperPage() {
                         const res = await fetch(`/api/minesweeper/games/${id}`)
                         if (!res.ok) throw new Error('Failed to load')
                         const data = await res.json()
-                        const qs: MCQuestion[] = Array.isArray(data?.questions) ? data.questions.map((q: any) => ({
-                          prompt: String(q.prompt || ''),
-                          choices: Array.isArray(q?.choices) ? q.choices.map((c: any) => String(c)) : [],
-                          correctIndex: Number(q?.correctIndex ?? 0) || 0,
-                          explanation: q?.explanation ? String(q.explanation) : undefined,
-                          imageUrl: q?.imageUrl ? String(q.imageUrl) : undefined,
-                        })) : []
+                        const qs: MCQuestion[] = Array.isArray((data as { questions?: unknown })?.questions)
+                          ? ((data as { questions: unknown[] }).questions).map((q) => {
+                              const obj = (q ?? {}) as Record<string, unknown>
+                              return {
+                                prompt: String((obj as { prompt?: unknown }).prompt || ''),
+                                choices: Array.isArray(obj?.choices) ? (obj.choices as unknown[]).map((c) => String(c)) : [],
+                                correctIndex: Number((obj as { correctIndex?: unknown }).correctIndex ?? 0) || 0,
+                                explanation: (obj as { explanation?: unknown }).explanation ? String((obj as { explanation?: unknown }).explanation) : undefined,
+                                imageUrl: (obj as { imageUrl?: unknown }).imageUrl ? String((obj as { imageUrl?: unknown }).imageUrl) : undefined,
+                              }
+                            })
+                          : []
                         setQuestions(qs)
                         setNewName(data.name || '')
                         setNewDesc(data.description || '')
@@ -456,16 +467,19 @@ export default function MinesweeperPage() {
                           const res = await fetch('/api/minesweeper/generate', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ text: aiText, numQuestions: aiNumQuestions, choicesPerQuestion: aiChoices }) })
                           const data = await res.json()
                           if (!res.ok) throw new Error(data?.error || 'Failed to generate')
-                          const qs: MCQuestion[] = (Array.isArray(data?.questions) ? data.questions : []).map((q: any) => ({
-                            prompt: String(q.prompt || ''),
-                            choices: Array.isArray(q?.choices) ? q.choices.map((c: any) => String(c)) : [],
-                            correctIndex: Number(q?.correctIndex ?? 0) || 0,
-                            explanation: q?.explanation ? String(q.explanation) : undefined,
-                            imageUrl: q?.imageUrl ? String(q.imageUrl) : undefined,
-                          }))
+                          const qs: MCQuestion[] = (Array.isArray((data as { questions?: unknown })?.questions) ? (data as { questions: unknown[] }).questions : []).map((q) => {
+                            const obj = (q ?? {}) as Record<string, unknown>
+                            return {
+                              prompt: String((obj as { prompt?: unknown }).prompt || ''),
+                              choices: Array.isArray(obj?.choices) ? (obj.choices as unknown[]).map((c) => String(c)) : [],
+                              correctIndex: Number((obj as { correctIndex?: unknown }).correctIndex ?? 0) || 0,
+                              explanation: (obj as { explanation?: unknown }).explanation ? String((obj as { explanation?: unknown }).explanation) : undefined,
+                              imageUrl: (obj as { imageUrl?: unknown }).imageUrl ? String((obj as { imageUrl?: unknown }).imageUrl) : undefined,
+                            }
+                          })
                           setQuestions(qs)
                           setMode('build')
-                        } catch (e: any) { setAiError(e?.message || 'Could not generate') }
+                        } catch (e: unknown) { const msg = typeof (e as { message?: unknown })?.message === 'string' ? (e as { message: string }).message : 'Could not generate'; setAiError(msg) }
                         finally { setAiBusy(false) }
                       }}
                     >{aiBusy ? 'Generating…' : 'Generate'}</Button>
@@ -543,7 +557,7 @@ export default function MinesweeperPage() {
                   // Blur only during question and slot phases; keep grid sharp for nextOverlay
                   filter: (phase === 'question' || phase === 'slot') ? 'blur(4px)' : undefined,
                   // Disable pointer events only during question and slot
-                  pointerEvents: (phase === 'question' || phase === 'slot') ? 'none' as any : 'auto',
+                  pointerEvents: (phase === 'question' || phase === 'slot') ? ('none' as const) : 'auto',
                 }}
               >
               {grid.flatMap((row, r) => row.map((cell, c) => {

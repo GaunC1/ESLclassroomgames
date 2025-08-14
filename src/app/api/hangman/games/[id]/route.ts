@@ -1,7 +1,9 @@
 import { NextResponse } from 'next/server'
 import prisma from '@/lib/prisma'
 
-export async function GET(_req: Request, context: any) {
+type IdParams = { params: { id: string } }
+
+export async function GET(_req: Request, context: IdParams) {
   const id = Number(context?.params?.id)
   if (!Number.isFinite(id)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
   const game = await prisma.hangmanGame.findUnique({
@@ -12,7 +14,7 @@ export async function GET(_req: Request, context: any) {
   return NextResponse.json({ id: game.id, name: game.name, description: game.description, words: (game.words || []).map((w) => w.text) })
 }
 
-export async function DELETE(_req: Request, context: any) {
+export async function DELETE(_req: Request, context: IdParams) {
   const id = Number(context?.params?.id)
   if (!Number.isFinite(id)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
   await prisma.hangmanWord.deleteMany({ where: { gameId: id } })

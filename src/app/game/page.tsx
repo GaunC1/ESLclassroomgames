@@ -111,11 +111,18 @@ export default function GamePage() {
         const res = await fetch(`/api/games/${selectedGameId}`);
         if (!res.ok) throw new Error('Failed to load game');
         const data = await res.json();
-        const mapped: Round[] = (data.rounds || []).map((r: any) => ({ title: r.title, targets: (r.targets || []).map(String) }));
+        const mapped: Round[] = Array.isArray((data as { rounds?: unknown })?.rounds)
+          ? ((data as { rounds: unknown[] }).rounds).map((r, i: number) => {
+              const obj = (r ?? {}) as Record<string, unknown>
+              const title = typeof obj.title === 'string' && obj.title.trim() ? obj.title : `Round ${i + 1}`
+              const targets = Array.isArray(obj.targets) ? (obj.targets as unknown[]).map((t) => String(t)) : []
+              return { title, targets }
+            })
+          : [];
         if (mapped.length) {
           resolved = mapped;
         }
-      } catch (e: any) {
+      } catch (e: unknown) {
         setGamesError('Could not load selected game. Falling back to default rounds.');
       }
     }
@@ -168,11 +175,12 @@ export default function GamePage() {
           setGames(list);
         }
       } catch {}
-    } catch (e: any) {
-      setCustomError(e?.message || 'Could not save game');
-    } finally {
-      setSaving(false);
-    }
+      } catch (e: unknown) {
+      const msg = typeof (e as { message?: unknown })?.message === 'string' ? (e as { message: string }).message : 'Could not save game'
+      setCustomError(msg);
+      } finally {
+        setSaving(false);
+      }
   }
 
   // Derived totals
@@ -278,13 +286,20 @@ export default function GamePage() {
                         const res = await fetch(`/api/games/${id}`)
                         if (!res.ok) throw new Error('Failed to load')
                         const data = await res.json()
-                        const rounds = (data.rounds || []).map((r: any, i: number) => ({ title: r.title || `Round ${i+1}`, targets: (r.targets || []).map((t: any) => String(t)) }))
+                        const rounds: Round[] = Array.isArray((data as { rounds?: unknown })?.rounds)
+                          ? ((data as { rounds: unknown[] }).rounds).map((r, i: number) => {
+                              const obj = (r ?? {}) as Record<string, unknown>
+                              const title = typeof obj.title === 'string' && obj.title.trim() ? obj.title : `Round ${i + 1}`
+                              const targets = Array.isArray(obj.targets) ? (obj.targets as unknown[]).map((t) => String(t)) : []
+                              return { title, targets }
+                            })
+                          : []
                         setCustomRounds(rounds)
                         setNewGameName(data.name || '')
                         setNewGameDesc(data.description || '')
                         setSelectedGameId(id)
                         setMode('build')
-                      } catch (e) {}
+                      } catch (_e) {}
                     }}
                   />
                   {gamesError && <div className="text-xs text-rose-600">{gamesError}</div>}
@@ -347,15 +362,23 @@ export default function GamePage() {
                           });
                           const data = await res.json();
                           if (!res.ok) throw new Error(data?.error || 'Failed to generate');
-                          const rounds = (data?.rounds || []).map((r: any) => ({ title: String(r.title || ''), targets: (r.targets || []).map((t: any) => String(t)) }));
+                          const rounds: Round[] = Array.isArray((data as { rounds?: unknown })?.rounds)
+                            ? ((data as { rounds: unknown[] }).rounds).map((r) => {
+                                const obj = (r ?? {}) as Record<string, unknown>
+                                const title = typeof obj.title === 'string' ? obj.title : ''
+                                const targets = Array.isArray(obj.targets) ? (obj.targets as unknown[]).map((t) => String(t)) : []
+                                return { title, targets }
+                              })
+                            : []
                           if (!rounds.length) throw new Error('No rounds returned');
                           // Move to editor with generated rounds
                           setMode('build');
                           setCustomRounds(rounds);
                           if (typeof data?.name === 'string' && !newGameName) setNewGameName(data.name);
                           if (typeof data?.description === 'string' && !newGameDesc) setNewGameDesc(data.description);
-                        } catch (e: any) {
-                          setAiError(e?.message || 'Could not generate');
+                        } catch (e: unknown) {
+                          const msg = typeof (e as { message?: unknown })?.message === 'string' ? (e as { message: string }).message : 'Could not generate'
+                          setAiError(msg);
                         } finally {
                           setAiBusy(false);
                         }

@@ -5,7 +5,9 @@ function parseChoices(s: string): string[] {
   try { const v = JSON.parse(s); return Array.isArray(v) ? v.map(String) : [] } catch { return [] }
 }
 
-export async function GET(_req: Request, context: any) {
+type IdParams = { params: { id: string } }
+
+export async function GET(_req: Request, context: IdParams) {
   const id = Number(context?.params?.id)
   if (!Number.isFinite(id)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
 
@@ -30,7 +32,7 @@ export async function GET(_req: Request, context: any) {
   })
 }
 
-export async function DELETE(_req: Request, context: any) {
+export async function DELETE(_req: Request, context: IdParams) {
   const id = Number(context?.params?.id)
   if (!Number.isFinite(id)) return NextResponse.json({ error: 'Invalid id' }, { status: 400 })
   // delete questions first
@@ -38,4 +40,3 @@ export async function DELETE(_req: Request, context: any) {
   await prisma.minesweeperGame.delete({ where: { id } }).catch(() => {})
   return new Response(null, { status: 204 })
 }
-

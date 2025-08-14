@@ -51,7 +51,7 @@ export async function POST(req: Request) {
       name || description ? `If name/description provided, prefer them.` : '',
     ].filter(Boolean).join('\n')
 
-    const resp: any = await openai.responses.create({
+    const resp: unknown = await openai.responses.create({
       model: DEFAULT_MODEL,
       input: [
         { role: 'developer', content: [{ type: 'input_text', text: developer }] },
@@ -59,22 +59,30 @@ export async function POST(req: Request) {
         { role: 'user', content: [{ type: 'input_text', text: ['--- BEGIN TEXT ---', text, '--- END TEXT ---'].join('\n') }] },
       ],
       text: {
-        format: { type: 'json_schema', name: 'mcq_set', strict: true, schema: schema as any },
+        // Cast schema to unknown to avoid 'any' while satisfying SDK type
+        format: { type: 'json_schema', name: 'mcq_set', strict: true, schema: schema as unknown },
       },
     })
 
-    const out = (resp as any).output?.[0]
-    const jsonText: string | undefined = out?.type === 'output_text' ? out.text : (resp as any).output_text
+    type OutputChunk = { type?: unknown; text?: unknown }
+    type ResponseLike = { output?: unknown; output_text?: unknown }
+    const r = resp as ResponseLike
+    let jsonText: string | undefined
+    if (Array.isArray(r.output) && r.output.length > 0) {
+      const first = r.output[0] as OutputChunk
+      if (first && first.type === 'output_text' && typeof first.text === 'string') jsonText = first.text
+    }
+    if (!jsonText && typeof r.output_text === 'string') jsonText = r.output_text
     if (!jsonText) throw new Error('No JSON returned')
     const parsed = JSON.parse(jsonText)
     return NextResponse.json(parsed)
-  } catch (e: any) {
-    const msg = typeof e?.message === 'string' ? e.message : 'Failed to generate'
+  } catch (e: unknown) {
+    const msg = typeof (e as { message?: unknown })?.message === 'string' ? (e as { message: string }).message : 'Failed to generate'
     return NextResponse.json({ error: msg }, { status: 500 })
   }
 }
 
-function clampInt(v: any, min: number, max: number): number | undefined {
+function clampInt(v: unknown, min: number, max: number): number | undefined {
   const n = Number(v)
   if (!Number.isFinite(n)) return undefined
   return Math.max(min, Math.min(max, Math.floor(n)))

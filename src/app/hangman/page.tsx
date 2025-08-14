@@ -116,7 +116,9 @@ export default function HangmanPage() {
       const res = await fetch(`/api/hangman/games/${id}`);
       if (!res.ok) throw new Error('Failed to load');
       const data = await res.json();
-      const w = Array.isArray(data?.words) ? data.words.map((t: any) => String(t)) : [];
+      const w = Array.isArray((data as { words?: unknown })?.words)
+        ? ((data as { words: unknown[] }).words).map((t) => String(t))
+        : [];
       setWords(Array.from(new Set(w)) as string[]);
     } catch (e) {
       setGamesError('Could not load selected game');
@@ -139,8 +141,9 @@ export default function HangmanPage() {
       if (!res.ok) throw new Error(data?.error || 'Failed to save');
       setSaveMsg('Saved!');
       setSelectedGameId(data.id);
-    } catch (e: any) {
-      setSaveMsg(e?.message || 'Could not save');
+    } catch (e: unknown) {
+      const msg = typeof (e as { message?: unknown })?.message === 'string' ? (e as { message: string }).message : 'Could not save'
+      setSaveMsg(msg);
     } finally { setSaving(false); }
   }
 
@@ -252,7 +255,9 @@ export default function HangmanPage() {
                         const res = await fetch(`/api/hangman/games/${id}`)
                         if (!res.ok) throw new Error('Failed to load')
                         const data = await res.json()
-                        const w = Array.isArray(data?.words) ? data.words.map((t: any) => String(t)) : []
+                        const w = Array.isArray((data as { words?: unknown })?.words)
+                          ? ((data as { words: unknown[] }).words).map((t) => String(t))
+                          : []
                         setWords(Array.from(new Set(w)) as string[])
                         setNewGameName(data.name || '')
                         setNewGameDesc(data.description || '')
@@ -327,12 +332,20 @@ export default function HangmanPage() {
                           });
                           const data = await res.json();
                           if (!res.ok) throw new Error(data?.error || 'Failed to generate');
-                          const flat = (Array.from(new Set((data?.rounds || []).flatMap((r: any) => (r.targets || []).map((t: any) => String(t))))) as string[])
+                          const roundsArr: unknown[] = Array.isArray((data as { rounds?: unknown })?.rounds)
+                            ? (data as { rounds: unknown[] }).rounds
+                            : []
+                          const flat = (Array.from(new Set(roundsArr.flatMap((r) => {
+                            const obj = (r ?? {}) as Record<string, unknown>
+                            const targets = Array.isArray(obj.targets) ? (obj.targets as unknown[]).map((t) => String(t)) : []
+                            return targets
+                          }))) as string[])
                             .filter(Boolean) as string[];
                           setWords(flat);
                           setMode('build'); // go to editor for review
-                        } catch (e: any) {
-                          setAiError(e?.message || 'Could not generate');
+                        } catch (e: unknown) {
+                          const msg = typeof (e as { message?: unknown })?.message === 'string' ? (e as { message: string }).message : 'Could not generate'
+                          setAiError(msg);
                         } finally { setAiBusy(false); }
                       }}
                     >{aiBusy ? 'Generating…' : 'Generate'}</Button>
