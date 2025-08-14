@@ -56,11 +56,22 @@ export default function MinesweeperPage() {
   const [hitCell, setHitCell] = useState<{ r: number; c: number } | null>(null)
   const [mergeTargetOwner, setMergeTargetOwner] = useState<number | null>(null)
   const [nextPlayerAfterMerge, setNextPlayerAfterMerge] = useState<number | null>(null)
+  // Slot machine animation state (smooth)
+  const [slotProgress, setSlotProgress] = useState<number>(0) // fractional index progress through aliveOrder
+  const [slotTarget, setSlotTarget] = useState<number | null>(null)
+  const slotAnimFrameRef = useRef<number | null>(null)
+  const slotStartTimeRef = useRef<number | null>(null)
+  const slotDurationRef = useRef<number>(0)
+  const slotStartRef = useRef<number>(0)
+  const slotDistanceRef = useRef<number>(0)
+  const [slotHolding, setSlotHolding] = useState<boolean>(false)
+  const slotHoldTimeoutRef = useRef<number | null>(null)
 
-  // Disable page scrolling while in grid view
+  // Disable page scrolling during gameplay overlays (not during setup)
   useEffect(() => {
     if (typeof document === 'undefined') return
-    if (phase !== 'grid') return
+    if (isSetup) return
+    if (phase !== 'grid' && phase !== 'question' && phase !== 'nextOverlay' && phase !== 'slot') return
     const prevHtml = document.documentElement.style.overflow
     const prevBody = document.body.style.overflow
     document.documentElement.style.overflow = 'hidden'
@@ -69,7 +80,7 @@ export default function MinesweeperPage() {
       document.documentElement.style.overflow = prevHtml
       document.body.style.overflow = prevBody
     }
-  }, [phase])
+  }, [phase, isSetup])
 
   const palette = useMemo(() => [
     '#C9D6EA','#E7D4E8','#E8E1C9','#D4E7D1','#EAD9C9','#D9EAEA','#E5D9C9','#D1D9E7',
@@ -184,21 +195,131 @@ export default function MinesweeperPage() {
     return arr
   }, [qIndex, questions.length])
 
-  // Slot phase auto-picks after short delay
+  // Compute a single label position per contiguous territory (owner-connected component)
+  const labelPositions = useMemo(() => {
+    const labels = new Set<string>()
+    if (!rows || !cols) return labels
+    const visited: boolean[][] = Array.from({ length: rows }, () => Array(cols).fill(false))
+    const inBounds = (r: number, c: number) => r >= 0 && r < rows && c >= 0 && c < cols
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        if (visited[r][c]) continue
+        const owner = grid[r]?.[c]?.owner
+        if (owner == null || owner < 0) { visited[r][c] = true; continue }
+        // BFS collect this territory component
+        const queue: [number, number][] = [[r, c]]
+        visited[r][c] = true
+        const cells: [number, number][] = []
+        while (queue.length) {
+          const [rr, cc] = queue.shift() as [number, number]
+          cells.push([rr, cc])
+          const deltas = [[1,0],[-1,0],[0,1],[0,-1]] as const
+          for (const [dr, dc] of deltas) {
+            const nr = rr + dr, nc = cc + dc
+            if (!inBounds(nr, nc) || visited[nr][nc]) continue
+            if (grid[nr][nc].owner === owner) {
+              visited[nr][nc] = true
+              queue.push([nr, nc])
+            }
+          }
+        }
+        if (cells.length) {
+          // choose a representative cell near the centroid
+          let sumR = 0, sumC = 0
+          for (const [rr, cc] of cells) { sumR += rr; sumC += cc }
+          const ar = sumR / cells.length, ac = sumC / cells.length
+          let best: [number, number] = cells[0]
+          let bestD = Infinity
+          for (const [rr, cc] of cells) {
+            const d = (rr - ar) * (rr - ar) + (cc - ac) * (cc - ac)
+            if (d < bestD) { bestD = d; best = [rr, cc] }
+          }
+          labels.add(`${best[0]},${best[1]}`)
+        }
+      }
+    }
+    return labels
+  }, [grid, rows, cols])
+
+  // Derive alive owners from the grid (source of truth for win condition and header)
+  const ownersWithCells = useMemo(() => {
+    const s = new Set<number>()
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < cols; c++) {
+        const ow = grid[r]?.[c]?.owner
+        if (ow != null && ow >= 0) s.add(ow)
+      }
+    }
+    return s
+  }, [grid, rows, cols])
+
+  // Slot machine animation to choose next player (smooth RAF with easing)
+  const aliveOrder = useMemo(() => teams.map((_, i) => i).filter((i) => alive[i]), [teams, alive])
   useEffect(() => {
-    if (isSetup || phase !== 'slot' || !teams.length) return
-    const t = setTimeout(() => {
-      const p = pickRandomPlayer()
-      if (p == null) return
-      setCurrentPlayer(p)
-      setPickedBefore((prev) => new Set(prev).add(p))
-      // reset any previous selection
-      setSelectedChoice(null)
-      setSelectedForQIndex(null)
-      setPhase('question')
-    }, 1000)
-    return () => clearTimeout(t)
-  }, [phase, teams.length, questions.length, qIndex, isSetup])
+    if (isSetup || phase !== 'slot' || aliveOrder.length === 0) return
+
+    const target = pickRandomPlayer()
+    if (target == null) return
+    setSlotTarget(target)
+
+    const len = aliveOrder.length
+    const start = Math.random() * len
+    const targetPos = aliveOrder.indexOf(target)
+    const startFloor = Math.floor(start) % len
+    const startFrac = start - Math.floor(start)
+    const stepsToTarget = (targetPos - startFloor + len) % len
+    const cycles = 2 * len // start slower overall (fewer cycles)
+    // Ensure final progress lands exactly on target row center (integer + 0.5)
+    // We start at start+0.5 and add distance so final = cycles + startFloor + stepsToTarget + 0.5
+    const distance = cycles + stepsToTarget - startFrac
+    const duration = 3500 // ms, half as long total duration
+
+    // Start centered on a row
+    slotStartRef.current = start + 0.5
+    slotDistanceRef.current = distance
+    slotDurationRef.current = duration
+    slotStartTimeRef.current = null
+
+    // Linear deceleration: starts at constant speed and only slows down
+    // Integrated form of v(t) = v0 * (1 - t/T) gives progress factor f(u) = 2u - u^2
+    function decel(u: number) { return 2 * u - u * u }
+    function tick(ts: number) {
+      if (slotStartTimeRef.current == null) slotStartTimeRef.current = ts
+      const elapsed = ts - (slotStartTimeRef.current ?? 0)
+      const u = Math.min(1, elapsed / (slotDurationRef.current || 1))
+      const factor = decel(u)
+      const progress = (slotStartRef.current || 0) + (slotDistanceRef.current || 0) * factor
+      setSlotProgress(progress)
+      if (u < 1) {
+        slotAnimFrameRef.current = requestAnimationFrame(tick)
+      } else {
+        // Snap to exact final position and compute landed team from center slot
+        const finalProg = (slotStartRef.current || 0) + (slotDistanceRef.current || 0)
+        setSlotProgress(finalProg)
+        const lenNow = aliveOrder.length || 1
+        const centerIndex = ((Math.floor(finalProg) % lenNow) + lenNow) % lenNow
+        const landedTeam = aliveOrder[centerIndex]
+        setCurrentPlayer(landedTeam)
+        setPickedBefore((prev) => new Set(prev).add(landedTeam))
+        setSelectedChoice(null)
+        setSelectedForQIndex(null)
+        setSlotHolding(true)
+        // Pause for 1000ms to showcase the chosen team before moving to question
+        if (slotHoldTimeoutRef.current) window.clearTimeout(slotHoldTimeoutRef.current)
+        slotHoldTimeoutRef.current = window.setTimeout(() => {
+          setSlotHolding(false)
+          setPhase('question')
+        }, 1000)
+      }
+    }
+    slotAnimFrameRef.current = requestAnimationFrame(tick)
+
+    return () => {
+      if (slotAnimFrameRef.current != null) cancelAnimationFrame(slotAnimFrameRef.current)
+      slotAnimFrameRef.current = null
+      if (slotHoldTimeoutRef.current) { window.clearTimeout(slotHoldTimeoutRef.current); slotHoldTimeoutRef.current = null }
+    }
+  }, [phase, isSetup, aliveOrder.length])
 
   function answerQuestion(idx: number) {
     const q = questions[qIndex % questions.length]
@@ -236,6 +357,14 @@ export default function MinesweeperPage() {
     return Array.from(neigh)
   }
 
+  function eligibleNeighborOwners(targetOwner: number): number[] {
+    const neighbors = ownersAdjacentTo(targetOwner)
+    if (neighbors.length <= 1) return neighbors
+    if (currentPlayer == null) return neighbors
+    // Omit current player's own team unless it is the only neighbor
+    return neighbors.filter((o) => o !== currentPlayer)
+  }
+
   function reassignOwner(from: number, to: number) {
     setGrid((prev) => prev.map((row) => row.map((cell) => (cell.owner === from ? { ...cell, owner: to } : cell))))
   }
@@ -261,13 +390,20 @@ export default function MinesweeperPage() {
       finalizeMerge(targetOwner, currentPlayer)
       return
     }
-    if (neighbors.length === 1) {
-      const recipient = neighbors[0]
+    const elig = eligibleNeighborOwners(targetOwner)
+    if (elig.length === 0) {
+      // the only neighbor was current player; auto-merge to self
+      setMergeTargetOwner(currentPlayer)
+      finalizeMerge(targetOwner, currentPlayer)
+      return
+    }
+    if (elig.length === 1) {
+      const recipient = elig[0]
       setMergeTargetOwner(recipient)
       finalizeMerge(targetOwner, recipient)
       return
     }
-    // multiple: wait for user to choose any tile of recipient owner
+    // multiple eligible neighbors: wait for user to choose
     setMergeTargetOwner(null)
   }
 
@@ -289,7 +425,8 @@ export default function MinesweeperPage() {
     if (cell.owner >= 0) {
       const targetOwner = grid[hitCell.r][hitCell.c].owner
       if (targetOwner >= 0 && cell.owner !== targetOwner) {
-        finalizeMerge(targetOwner, cell.owner)
+        const elig = eligibleNeighborOwners(targetOwner)
+        if (elig.includes(cell.owner)) finalizeMerge(targetOwner, cell.owner)
       }
     }
   }
@@ -453,16 +590,19 @@ export default function MinesweeperPage() {
 
   // Gameplay view
   const teamColors = teams.map((_, i) => palette[i % palette.length])
-  const aliveCount = alive.filter(Boolean).length
+  const aliveCount = ownersWithCells.size
   const currentQ = questions[qIndex % questions.length]
+
+  // Minimal header height to maximize grid size
+  const HEADER_H = 44
 
   return (
     <div className="min-h-screen flex flex-col bg-fun">
-      <div className={phase === 'grid' ? 'hidden' : 'p-4 flex items-center justify-between'}>
-        <Link href="/" className="text-sm underline">Home</Link>
-        <div className="text-sm text-gray-600">{aliveCount} players alive</div>
+      <div className="flex items-center justify-between px-3" style={{ height: HEADER_H }}>
+        <Link href="/" className="text-xs underline">Home</Link>
+        <div className="text-[11px] text-gray-600">{aliveCount} players alive</div>
       </div>
-      <div className={phase === 'grid' ? 'flex-1 overflow-hidden min-h-0 flex flex-col' : 'flex-1 p-4 sm:p-8 space-y-6'}>
+      <div className={(phase === 'grid' || phase === 'question' || phase === 'nextOverlay' || phase === 'slot') ? 'flex-1 overflow-hidden min-h-0 flex flex-col' : 'flex-1 p-4 sm:p-8 space-y-6'}>
         {/* Slot machine / current player */}
         {phase === 'slot' && (
           <div className="text-center text-lg">Selecting next player…</div>
@@ -470,42 +610,21 @@ export default function MinesweeperPage() {
 
         {/* Removed separate current-player text; highlight in-grid instead */}
 
-        {/* Question phase */}
-        {phase === 'question' && currentQ && (
-          <Card title="Question">
-            <div className="space-y-3">
-              {currentPlayer != null && (
-                <div className="flex items-center gap-2 text-sm">
-                  <span className="text-gray-600">Team to answer:</span>
-                  <span className="inline-flex items-center gap-2 px-2 py-1 rounded-full border" style={{ borderColor: teamColors[currentPlayer] }}>
-                    <span className="w-2.5 h-2.5 rounded-full" style={{ background: teamColors[currentPlayer] }} />
-                    <span className="font-medium">{teams[currentPlayer]}</span>
-                  </span>
-                </div>
-              )}
-              <div className="text-base">{currentQ.prompt}</div>
-              {currentQ.imageUrl && <img src={currentQ.imageUrl} alt="" className="max-h-48 rounded" />}
-              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
-                {choiceOrder.map((idx, i) => (
-                  <button key={`${qIndex}-${idx}`}
-                    className={["text-left p-3 rounded border transition", (selectedForQIndex === qIndex && selectedChoice === i) ? (idx === currentQ.correctIndex ? 'bg-green-100 border-green-400' : 'bg-rose-100 border-rose-400') : 'hover:bg-gray-50 border-gray-200'].join(' ')}
-                    onClick={() => answerQuestion(i)}
-                  >{String.fromCharCode(65 + i)}. {currentQ.choices[idx]}</button>
-                ))}
-              </div>
-            </div>
-          </Card>
-        )}
+        {/* Question overlay will render inside the grid container to keep continuity */}
 
         {/* Grid phase */}
-        {phase === 'grid' && (
+        {(phase === 'grid' || phase === 'question' || phase === 'nextOverlay' || phase === 'slot') && (
           <Card className="h-full p-0 flex-1 min-h-0">
-            <div className="relative w-full h-full overflow-hidden" style={{ height: '100vh' }}>
+            <div className="relative w-full h-full overflow-hidden" style={{ height: `calc(100vh - ${HEADER_H}px)` }}>
               <div
                 className="grid w-full h-full"
                 style={{
                   gridTemplateColumns: `repeat(${cols}, 1fr)`,
                   gridTemplateRows: `repeat(${rows}, 1fr)`,
+                  // Blur only during question and slot phases; keep grid sharp for nextOverlay
+                  filter: (phase === 'question' || phase === 'slot') ? 'blur(4px)' : undefined,
+                  // Disable pointer events only during question and slot
+                  pointerEvents: (phase === 'question' || phase === 'slot') ? 'none' as any : 'auto',
                 }}
               >
               {grid.flatMap((row, r) => row.map((cell, c) => {
@@ -523,13 +642,18 @@ export default function MinesweeperPage() {
                 const borderLeftColor = borderBlackOrGray(leftOwner, owner)
                 const borderRightColor = borderBlackOrGray(rightOwner, owner)
                 const borderBottomColor = borderBlackOrGray(downOwner, owner)
-                // highlight neighbor owners when selecting merge owner
+                // highlight eligible neighbor owners when selecting merge owner
                 let highlight = ''
+                let showGreenStripes = false
+                const isSelecting = !!hitCell && mergeTargetOwner === null
                 if (hitCell && owner >= 0) {
                   const targetOwner = grid[hitCell.r][hitCell.c].owner
                   if (targetOwner >= 0 && owner !== targetOwner) {
-                    const elig = ownersAdjacentTo(targetOwner)
-                    if (elig.includes(owner)) highlight = '0 0 0 3px rgba(16,185,129,0.4) inset'
+                    const elig = eligibleNeighborOwners(targetOwner)
+                    if (elig.includes(owner)) {
+                      highlight = '0 0 0 3px rgba(16,185,129,0.35) inset'
+                      showGreenStripes = true
+                    }
                   }
                 }
                 const isCurrentOwner = currentPlayer != null && currentPlayer === owner
@@ -549,12 +673,20 @@ export default function MinesweeperPage() {
                     }}
                     title={owner === -1 ? 'Bomb' : teams[owner]}
                   >
-                    {isCurrentOwner && (
+                    {/* Red diagonal stripes for the hit cell */}
+                    {isHit && (
+                      <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(45deg, rgba(239,68,68,0.35) 0 10px, rgba(239,68,68,0.35) 10px 20px)' }} />
+                    )}
+                    {/* Green diagonal stripes for eligible neighbors when selecting */}
+                    {isSelecting && showGreenStripes && (
+                      <div className="absolute inset-0 pointer-events-none" style={{ backgroundImage: 'repeating-linear-gradient(45deg, rgba(16,185,129,0.35) 0 10px, rgba(16,185,129,0.35) 10px 20px)' }} />
+                    )}
+                    {isCurrentOwner && labelPositions.has(`${r},${c}`) && (
                       <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
                         <div className="rounded-full border-2 border-emerald-500" style={{ width: '70%', height: '70%' }} />
                       </div>
                     )}
-                    {owner >= 0 && (
+                    {owner >= 0 && labelPositions.has(`${r},${c}`) && (
                       <div className="absolute inset-0 flex items-center justify-center">
                         <div
                           className={["px-1 text-[10px] sm:text-xs font-semibold truncate max-w-full",
@@ -568,37 +700,136 @@ export default function MinesweeperPage() {
                 )
               }))}
               </div>
-              {hitCell && (
+              {phase === 'grid' && hitCell && (
                 <div className="absolute bottom-3 left-3 flex items-center gap-2 bg-white/80 backdrop-blur-sm rounded px-3 py-2 shadow">
                   <div className="text-sm">Selected cell: ({hitCell.r + 1},{hitCell.c + 1})</div>
                   <Button variant="secondary" onClick={() => setHitCell(null)}>Change Target</Button>
                   <Button variant="primary" onClick={confirmHit}>Confirm Hit</Button>
                 </div>
               )}
+
+              {/* Question overlay content */}
+              {phase === 'question' && currentQ && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="absolute inset-0" />
+                  <Card className="relative max-w-3xl w-[min(92vw,900px)] m-4">
+                    <div className="space-y-3">
+                      {currentPlayer != null && (
+                        <div className="flex items-center gap-2 text-sm">
+                          <span className="text-gray-600">Team to answer:</span>
+                          <span className="inline-flex items-center gap-2 px-2 py-1 rounded-full border" style={{ borderColor: teamColors[currentPlayer] }}>
+                            <span className="w-2.5 h-2.5 rounded-full" style={{ background: teamColors[currentPlayer] }} />
+                            <span className="font-medium">{teams[currentPlayer]}</span>
+                          </span>
+                        </div>
+                      )}
+                      <div className="text-base">{currentQ.prompt}</div>
+                      {currentQ.imageUrl && <img src={currentQ.imageUrl} alt="" className="max-h-48 rounded" />}
+                      <div className="grid grid-cols-1 sm:grid-cols-2 gap-2">
+                        {choiceOrder.map((idx, i) => (
+                          <button key={`${qIndex}-${idx}`}
+                            className={["text-left p-3 rounded border transition", (selectedForQIndex === qIndex && selectedChoice === i) ? (idx === currentQ.correctIndex ? 'bg-green-100 border-green-400' : 'bg-rose-100 border-rose-400') : 'hover:bg-gray-50 border-gray-200'].join(' ')}
+                            onClick={() => answerQuestion(i)}
+                          >{String.fromCharCode(65 + i)}. {currentQ.choices[idx]}</button>
+                        ))}
+                      </div>
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {/* Slot machine overlay: smooth track with linear deceleration */}
+              {phase === 'slot' && aliveOrder.length > 0 && (
+                <div className="absolute inset-0 flex items-center justify-center">
+                  <div className="absolute inset-0" />
+                  <Card className="relative max-w-md w-[min(92vw,640px)] m-4">
+                    <div className="relative overflow-hidden" style={{ height: 320 }}>
+                      {/* Center band */}
+                      <div className="absolute inset-x-0 top-1/2 -translate-y-1/2 h-10 border-y border-emerald-400/60 pointer-events-none" />
+                      {/* Top/bottom gradient fades */}
+                      <div className="pointer-events-none absolute inset-x-0 top-0 h-16 bg-gradient-to-b from-white/90 to-white/0" />
+                      <div className="pointer-events-none absolute inset-x-0 bottom-0 h-16 bg-gradient-to-t from-white/90 to-white/0" />
+                      {/* Repeated track */}
+                      {(() => {
+                        const len = aliveOrder.length
+                        const REPEAT = 40
+                        const rowH = 42
+                        const centerY = 160 // 320/2
+                        const total = len * REPEAT
+                        const seq = Array.from({ length: total }, (_, i) => aliveOrder[i % len])
+                        const translateY = centerY - (slotProgress * rowH)
+                        return (
+                          <div className="absolute inset-0 overflow-hidden">
+                            <div className="will-change-transform" style={{ transform: `translateY(${translateY}px)` }}>
+                              {seq.map((teamIdx, i) => {
+                                const deltaRows = Math.abs(i - slotProgress)
+                                const isCenter = deltaRows < 0.5
+                                const scale = isCenter ? 1.12 : 1
+                                const glow = isCenter ? '0 0 0 3px rgba(16,185,129,0.45)' : undefined
+                                const borderColor = isCenter ? '#10b981' : teamColors[teamIdx]
+                                const textColor = isCenter ? '#065f46' : undefined
+                                return (
+                                  <div key={`slot-row-${i}`} className="flex items-center justify-center" style={{ height: rowH }}>
+                                    <span
+                                      className="inline-flex items-center gap-2 px-2 py-1 rounded-full border bg-white/95 transition"
+                                      style={{
+                                        borderColor,
+                                        boxShadow: glow,
+                                        transform: `scale(${scale})`,
+                                        color: textColor,
+                                      }}
+                                    >
+                                      <span className="w-2 h-2 rounded-full" style={{ background: borderColor }} />
+                                      <span className="truncate max-w-[14rem] sm:max-w-xs font-semibold">{teams[teamIdx]}</span>
+                                    </span>
+                                  </div>
+                                )
+                              })}
+                            </div>
+                          </div>
+                        )
+                      })()}
+                    </div>
+                  </Card>
+                </div>
+              )}
+
+              {/* Next player banner at top; grid remains unblurred and visible */}
+              {phase === 'nextOverlay' && nextPlayerAfterMerge != null && (
+                <div className="absolute inset-x-0 top-2 flex items-center justify-center pointer-events-none">
+                  <div className="pointer-events-auto inline-flex items-center gap-3 rounded-full border bg-white/90 px-3 py-2 shadow-sm"
+                       style={{ borderColor: teamColors[nextPlayerAfterMerge] }}>
+                    <div className="flex items-center gap-2 text-sm">
+                      <span className="text-gray-600">Next player:</span>
+                      <span className="inline-flex items-center gap-2 px-2 py-1 rounded-full border"
+                            style={{ borderColor: teamColors[nextPlayerAfterMerge] }}>
+                        <span className="w-2.5 h-2.5 rounded-full"
+                              style={{ background: teamColors[nextPlayerAfterMerge] }} />
+                        <span className="font-medium">{teams[nextPlayerAfterMerge]}</span>
+                      </span>
+                    </div>
+                    <Button variant="primary" onClick={() => { setCurrentPlayer(nextPlayerAfterMerge); setQIndex((i) => (i + 1) % questions.length); setPhase('question') }}>Ready</Button>
+                  </div>
+                </div>
+              )}
             </div>
           </Card>
         )}
 
-        {/* Next overlay */}
-        {phase === 'nextOverlay' && nextPlayerAfterMerge != null && (
-          <Card>
-            <div className="flex items-center gap-2">
-              <div className="w-3 h-3 rounded-full" style={{ background: teamColors[nextPlayerAfterMerge] }} />
-              <div className="font-medium">Next Player: {teams[nextPlayerAfterMerge]}</div>
-            </div>
-            <div className="mt-2"><Button variant="primary" onClick={() => { setCurrentPlayer(nextPlayerAfterMerge); setQIndex((i) => (i + 1) % questions.length); setPhase('question') }}>Ready</Button></div>
-          </Card>
-        )}
+        {/* Next overlay now handled as an overlay within the grid container */}
 
         {/* Winner */}
-        {aliveCount === 1 && (
+        {aliveCount === 1 && (() => {
+          const winnerIdx = Array.from(ownersWithCells.values())[0] ?? 0
+          return (
           <Card>
-            <div className="text-2xl font-bold text-center">Winner: {teams[alive.findIndex(Boolean)]}</div>
+            <div className="text-2xl font-bold text-center">Winner: {teams[winnerIdx]}</div>
             <div className="text-center mt-3">
               <Button variant="secondary" onClick={() => { setIsSetup(true); setSetupStep('select') }}>Return to Menu</Button>
             </div>
           </Card>
-        )}
+          )
+        })()}
       </div>
     </div>
   )
