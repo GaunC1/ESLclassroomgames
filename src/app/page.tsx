@@ -19,6 +19,11 @@ export default function Home() {
             <div className="text-xs text-gray-600">Teams guess letters to reveal a word.</div>
             <div className="mt-3 inline-block rounded-full bg-black text-white text-xs px-3 py-1">Play</div>
           </Link>
+          <Link href="/minesweeper" className="rounded-lg border p-4 bg-white/80 hover:bg-white transition">
+            <div className="font-semibold mb-1">Classroom Minesweeper</div>
+            <div className="text-xs text-gray-600">Answer MCQs to capture cells and win.</div>
+            <div className="mt-3 inline-block rounded-full bg-black text-white text-xs px-3 py-1">Play</div>
+          </Link>
         </div>
       </div>
     </main>

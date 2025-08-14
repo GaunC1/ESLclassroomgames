@@ -57,3 +57,31 @@ model HangmanWord {
   @@unique([gameId, index])
   @@index([gameId, index])
 }
+
+// Minesweeper multiple-choice question sets
+model MinesweeperGame {
+  id          Int                    @id @default(autoincrement())
+  name        String                 @unique
+  description String?
+  createdAt   DateTime               @default(now())
+  updatedAt   DateTime               @updatedAt
+  questions   MinesweeperQuestion[]
+}
+
+model MinesweeperQuestion {
+  id            Int              @id @default(autoincrement())
+  gameId        Int
+  index         Int
+  prompt        String
+  choices       String           // JSON-encoded array of strings
+  correctIndex  Int
+  explanation   String?
+  imageUrl      String?
+  createdAt     DateTime         @default(now())
+  updatedAt     DateTime         @updatedAt
+
+  game          MinesweeperGame  @relation(fields: [gameId], references: [id])
+
+  @@unique([gameId, index])
+  @@index([gameId, index])
+}

@@ -129,7 +129,7 @@ export function GameChooser({ selectedId, onSelect, onLoaded, onError, kind = 'S
                   className="text-[10px] font-medium whitespace-nowrap rounded-full px-2 py-0.5 border"
                   style={{ borderColor: accent }}
                 >
-                  {g.roundsCount} {endpoint?.includes('/api/hangman') ? 'words' : 'rounds'}
+                  {g.roundsCount} {endpoint?.includes('/api/hangman') ? 'words' : endpoint?.includes('/api/minesweeper') ? 'questions' : 'rounds'}
                 </div>
               </div>
             </Card>
