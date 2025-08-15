@@ -232,6 +232,17 @@ export default function MinesweeperPage() {
     return labels
   }, [grid, rows, cols])
 
+  // During merge-owner selection, precompute which owners are eligible
+  const eligibleOwnersForSelection = useMemo(() => {
+    const s = new Set<number>()
+    if (!hitCell || mergeTargetOwner !== null) return s
+    const target = grid[hitCell.r]?.[hitCell.c]?.owner
+    if (target == null || target < 0) return s
+    for (const o of eligibleNeighborOwners(target)) s.add(o)
+    return s
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [hitCell, grid, mergeTargetOwner, currentPlayer])
+
   // Derive alive owners from the grid (source of truth for win condition and header)
   const ownersWithCells = useMemo(() => {
     const s = new Set<number>()
@@ -580,20 +591,19 @@ export default function MinesweeperPage() {
                 let highlight = ''
                 let showGreenStripes = false
                 const isSelecting = !!hitCell && mergeTargetOwner === null
-                if (hitCell && owner >= 0) {
-                  const targetOwner = grid[hitCell.r][hitCell.c].owner
-                  if (targetOwner >= 0 && owner !== targetOwner) {
-                    const elig = eligibleNeighborOwners(targetOwner)
-                    if (elig.includes(owner)) {
-                      highlight = '0 0 0 3px rgba(16,185,129,0.35) inset'
-                      showGreenStripes = true
-                    }
-                  }
+                const isLabelCell = owner >= 0 && labelPositions.has(`${r},${c}`)
+                const isEligibleLabel = isSelecting && isLabelCell && eligibleOwnersForSelection.has(owner) && (grid[hitCell!.r][hitCell!.c].owner !== owner)
+                if (isEligibleLabel) {
+                  // Only highlight the central label cell of each eligible neighbor
+                  highlight = '0 0 0 3px rgba(16,185,129,0.35) inset'
+                  showGreenStripes = true
                 }
                 const isCurrentOwner = currentPlayer != null && currentPlayer === owner
                 return (
                   <div key={`${r}-${c}`} onClick={() => {
-                    if (hitCell && mergeTargetOwner == null) { onChooseMergeOwnerByClick(r, c) } else { onGridCellClick(r, c) }
+                    // When selecting a merge owner, ignore broad cell clicks to avoid accidental triggers
+                    if (hitCell && mergeTargetOwner == null) { return }
+                    onGridCellClick(r, c)
                   }}
                     className="relative cursor-pointer"
                     style={{
@@ -622,12 +632,33 @@ export default function MinesweeperPage() {
                     )}
                     {owner >= 0 && labelPositions.has(`${r},${c}`) && (
                       <div className="absolute inset-0 flex items-center justify-center">
-                        <div
-                          className={["px-1 text-[10px] sm:text-xs font-semibold truncate max-w-full",
-                            currentPlayer === owner ? 'text-emerald-700' : 'text-gray-900'].join(' ')}
-                        >
-                          {teams[owner]}
-                        </div>
+                        {isEligibleLabel ? (
+                          <button
+                            className={[
+                              "px-2 py-1 rounded border shadow text-[10px] sm:text-xs font-semibold truncate max-w-[80%]",
+                              "bg-white/80 hover:bg-emerald-50",
+                              "border-emerald-500 text-emerald-700"
+                            ].join(' ')}
+                            onClick={(e) => {
+                              e.stopPropagation()
+                              if (!hitCell) return
+                              const targetOwner = grid[hitCell.r][hitCell.c].owner
+                              if (targetOwner >= 0 && owner !== targetOwner && eligibleOwnersForSelection.has(owner)) {
+                                finalizeMerge(targetOwner, owner)
+                              }
+                            }}
+                            title={`Merge ${teams[grid[hitCell!.r][hitCell!.c].owner] ?? 'target'} into ${teams[owner]}`}
+                          >
+                            {teams[owner]}
+                          </button>
+                        ) : (
+                          <div
+                            className={["px-1 text-[10px] sm:text-xs font-semibold truncate max-w-full",
+                              currentPlayer === owner ? 'text-emerald-700' : 'text-gray-900'].join(' ')}
+                          >
+                            {teams[owner]}
+                          </div>
+                        )}
                       </div>
                     )}
                   </div>
