@@ -15,6 +15,7 @@ export function RandomPlayerChooser({
   durationMs = 3500,
   holdMs = 1000,
   height = 320,
+  weightsById,
 }: {
   candidates: RandomCandidate[];
   pickedBefore?: Set<number>;
@@ -22,6 +23,8 @@ export function RandomPlayerChooser({
   durationMs?: number;
   holdMs?: number;
   height?: number;
+  // Optional explicit weights (higher = more likely)
+  weightsById?: Record<number, number>;
 }) {
   const [progress, setProgress] = useState<number>(0);
 
@@ -32,10 +35,16 @@ export function RandomPlayerChooser({
   const rafRef = useRef<number | null>(null);
   const timeoutRef = useRef<number | null>(null);
 
-  // Weighted random: weight 2 if never picked, else 1
+  // Weighted random: use provided weights if given; otherwise weight 2 if never picked, else 1
   const pickWeighted = useCallback((): number | null => {
     if (!candidates.length) return null;
-    const weights = candidates.map((c) => (pickedBefore?.has(c.id) ? 1 : 2));
+    const weights = candidates.map((c) => {
+      if (weightsById && typeof weightsById[c.id] === 'number') {
+        const w = weightsById[c.id];
+        return Number.isFinite(w) && w > 0 ? w : 1;
+      }
+      return pickedBefore?.has(c.id) ? 1 : 2;
+    });
     const total = weights.reduce((a, b) => a + b, 0);
     let r = Math.random() * total;
     for (let i = 0; i < candidates.length; i++) {
@@ -43,7 +52,7 @@ export function RandomPlayerChooser({
       if (r <= 0) return candidates[i].id;
     }
     return candidates[candidates.length - 1].id;
-  }, [candidates, pickedBefore]);
+  }, [candidates, pickedBefore, weightsById]);
 
   useEffect(() => {
     if (!candidates.length) return;

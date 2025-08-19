@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useMemo, useRef, useState, useEffect } from "react";
 import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import { Card } from "@/components/ui/Card";
@@ -45,19 +45,33 @@ export default function HangmanPage() {
   const [currentTeamIndex, setCurrentTeamIndex] = useState(0);
   const [scores, setScores] = useState<number[]>([]);
   const [roundPoints, setRoundPoints] = useState<number[]>([]);
-  const [lives, setLives] = useState<number[]>([]);
-  const [maxLives] = useState<number>(6);
+  // unified gallows state: wrong parts with team attribution
+  type Part = { teamId: number; color: string };
+  const [parts, setParts] = useState<Part[]>([]);
+  const [maxParts] = useState<number>(6);
+  // Penalty sequence state when round is lost (full gallows)
+  const [penaltyActive, setPenaltyActive] = useState<boolean>(false);
+  const [penaltyIndex, setPenaltyIndex] = useState<number | null>(null);
+  const penaltyStartedRef = useRef<boolean>(false);
+  // Turn timer (10s per turn)
+  const [turnEndsAt, setTurnEndsAt] = useState<number | null>(null);
+  const [timeLeftMs, setTimeLeftMs] = useState<number>(0);
+  const [timerEnabled, setTimerEnabled] = useState<boolean>(true);
+  const [timerDurationSec, setTimerDurationSec] = useState<number>(10);
+  // After penalties complete, wait for manual Next Word and reveal the word in red
+  const [awaitingNextAfterPenalty, setAwaitingNextAfterPenalty] = useState<boolean>(false);
   const [guessFeedback, setGuessFeedback] = useState<null | 'wrong'>(null);
   const [remaining, setRemaining] = useState<number[]>([]);
   // derive current word number from remaining
   const [finished, setFinished] = useState<boolean>(false);
   // Random chooser state
   const [choosingTurn, setChoosingTurn] = useState<boolean>(false);
-  const [pickedBefore, setPickedBefore] = useState<Set<number>>(new Set());
+  // Track how many times each team has answered across the entire game
+  const [answerCounts, setAnswerCounts] = useState<number[]>([]);
 
   const alphabet = useMemo(() => "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("") as string[], []);
   const currentWord = (words[currentIndex] || "").toUpperCase();
-  const display = currentWord.split("").map((ch) => (alphabet.includes(ch) ? (guessed.has(ch) ? ch : "_") : ch)).join(" ");
+  // display handled via WordSlots component for better layout (letters above lines)
   const solved = currentWord && currentWord.split("").every((ch) => !alphabet.includes(ch) || guessed.has(ch));
   const accents = ['#FFB3D1', '#BFD6FF', '#FFE29A', '#C2F0C2', '#E1C2FF', '#FFC9A3'];
 
@@ -85,18 +99,23 @@ export default function HangmanPage() {
     setGuessed(new Set());
     setWrong(new Set());
     setRoundPoints(Array.from({ length: cleanedTeams.length }, () => 0));
-    setLives(Array.from({ length: cleanedTeams.length }, () => maxLives));
+    setParts([]);
     setFinished(false);
-    setPickedBefore(new Set());
+    setAnswerCounts(Array.from({ length: cleanedTeams.length }, () => 0));
     setIsSetup(false);
     setChoosingTurn(true);
+    penaltyStartedRef.current = false;
+    setTurnEndsAt(null);
+    setTimeLeftMs(0);
+    // keep user timer preferences (timerEnabled, timerDurationSec)
+    setAwaitingNextAfterPenalty(false);
   }
 
   function startNewRound(teamCount = teams.length) {
     setGuessed(new Set());
     setWrong(new Set());
     setRoundPoints(Array.from({ length: teamCount }, () => 0));
-    setLives(Array.from({ length: teamCount }, () => maxLives));
+    setParts([]);
     setRemaining((prev) => {
       if (!prev.length) {
         setFinished(true);
@@ -106,9 +125,12 @@ export default function HangmanPage() {
       setCurrentIndex(next);
       return rest;
     });
-    // reset chooser weighting each round and pick a random starting team
-    setPickedBefore(new Set());
+    // keep answerCounts across rounds; weighted chooser favors teams with fewer answers overall
     setChoosingTurn(true);
+    penaltyStartedRef.current = false;
+    setTurnEndsAt(null);
+    setTimeLeftMs(0);
+    setAwaitingNextAfterPenalty(false);
   }
 
   async function loadSelectedGameWords(id: number) {
@@ -154,34 +176,104 @@ export default function HangmanPage() {
     if (inWord) {
       const next = new Set(guessed);
       next.add(ch);
+      // Compute if this guess solves the word
+      const wouldSolve = currentWord
+        .split("")
+        .every((c) => !alphabet.includes(c) || next.has(c));
       setGuessed(next);
       // award points for all occurrences
       const gain = currentWord.split("").filter((c) => c === ch).length;
       setRoundPoints((prev) => prev.map((p, i) => (i === currentTeamIndex ? p + gain : p)));
-      // stay on same team after a correct guess
-      // if solved, show Next Word button; do not auto-advance
+      // do NOT allow another turn on correct guess — pass turn selection (unless solved by this guess)
+      if (!wouldSolve) {
+        setChoosingTurn(true);
+      } else {
+        // stop timer when solved
+        setTurnEndsAt(null);
+        setTimeLeftMs(0);
+      }
     } else {
       const nextW = new Set(wrong);
       nextW.add(ch);
       setWrong(nextW);
-      // decrement life immediately
-      const newLives = [...lives];
-      newLives[currentTeamIndex] = Math.max(0, (newLives[currentTeamIndex] || 0) - 1);
-      setLives(newLives);
-      // show wrong feedback, then move turn via random chooser
-      setGuessFeedback('wrong');
-      window.setTimeout(() => {
-        const died = (newLives[currentTeamIndex] || 0) <= 0;
-        if (died) {
-          setRoundPoints((rp) => rp.map((p, i) => (i === currentTeamIndex ? 0 : p)));
+      // add a colored body part for this wrong guess
+      const teamColor = accents[currentTeamIndex % accents.length];
+      setParts((prev) => {
+        const updated = [...prev, { teamId: currentTeamIndex, color: teamColor }];
+        if (updated.length >= maxParts) {
+          if (!penaltyStartedRef.current) {
+            penaltyStartedRef.current = true;
+            startPenaltySequence(updated);
+          }
+        } else {
+          setGuessFeedback('wrong');
+          window.setTimeout(() => {
+            setGuessFeedback(null);
+            setChoosingTurn(true);
+          }, 400);
         }
-        const anyAlive = newLives.some((v) => (v || 0) > 0);
-        if (!anyAlive) { endRound(false); }
-        else { setChoosingTurn(true); }
-        setGuessFeedback(null);
-      }, 800);
+        return updated;
+      });
     }
   }
+
+  function startPenaltySequence(currentParts: Part[]) {
+    setPenaltyActive(true);
+    setChoosingTurn(false);
+    setGuessFeedback(null);
+    // stop the turn timer during penalties
+    setTurnEndsAt(null);
+    setTimeLeftMs(0);
+    const total = currentParts.length;
+    function step(i: number) {
+      if (i >= total) {
+        // After all deductions, award any round points earned for correct letters
+        setScores((prev) => prev.map((s, idx) => s + (roundPoints[idx] || 0)));
+        setPenaltyIndex(null);
+        setPenaltyActive(false);
+        // Do not auto-advance. Reveal word and wait for Next Word click.
+        setAwaitingNextAfterPenalty(true);
+        penaltyStartedRef.current = false;
+        return;
+      }
+      const idx = total - 1 - i; // reverse chronological
+      const part = currentParts[idx];
+      setPenaltyIndex(idx);
+      // deduct 1 point from the team who owns this part
+      setScores((prev) => {
+        const next = [...prev];
+        next[part.teamId] = (next[part.teamId] || 0) - 1;
+        return next;
+      });
+      window.setTimeout(() => step(i + 1), 400);
+    }
+    step(0);
+  }
+
+  // Manage 10s countdown per turn
+  useEffect(() => {
+    if (!timerEnabled || choosingTurn || penaltyActive || awaitingNextAfterPenalty || finished) {
+      // pause/clear timer when not a team's turn
+      setTurnEndsAt(null);
+      setTimeLeftMs(0);
+      return;
+    }
+    if (turnEndsAt == null) return;
+    let timerId: number | null = null;
+    const tick = () => {
+      const ms = Math.max(0, turnEndsAt - Date.now());
+      setTimeLeftMs(ms);
+      if (ms <= 0) {
+        // time up: select a new random player
+        setTurnEndsAt(null);
+        setChoosingTurn(true);
+        return;
+      }
+      timerId = window.setTimeout(tick, 100);
+    };
+    timerId = window.setTimeout(tick, 100);
+    return () => { if (timerId != null) window.clearTimeout(timerId); };
+  }, [turnEndsAt, choosingTurn, penaltyActive, awaitingNextAfterPenalty, finished, timerEnabled]);
 
   // nextAliveTeamIndex removed (unused)
 
@@ -392,10 +484,10 @@ export default function HangmanPage() {
         </div>
       </main>
     );
-}
+  }
 
-// Gameplay view
-return (
+  // Gameplay view
+  return (
     <div className="min-h-screen flex flex-col bg-fun">
       <div className="p-4 flex items-center justify-between">
         <Link href="/" className="text-sm underline">Home</Link>
@@ -404,10 +496,74 @@ return (
       <div className="flex-1 px-4 sm:px-8 py-6">
         <div className="max-w-3xl mx-auto space-y-6">
           <Card>
-            <div className="text-center space-y-3">
-              <div className="text-xs text-gray-600">Word {Math.max(1, words.length - remaining.length)} of {words.length}</div>
-              <div className="text-3xl font-mono tracking-widest">{display}</div>
-              <div className="text-xs text-gray-600">Wrong: {[...wrong].join(" ") || "–"}</div>
+            <div className="relative grid grid-cols-1 sm:grid-cols-2 gap-4 items-center">
+              {/* Timer toggle + seconds in top-left of this box */}
+              <div className="absolute top-2 left-2 z-10 flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={() => {
+                    const enabled = !timerEnabled;
+                    setTimerEnabled(enabled);
+                    if (!enabled) {
+                      setTurnEndsAt(null);
+                      setTimeLeftMs(0);
+                    } else {
+                      if (!choosingTurn && !penaltyActive && !awaitingNextAfterPenalty && !finished && timerDurationSec > 0) {
+                        const ms = Math.max(1, Math.floor(timerDurationSec * 1000));
+                        setTurnEndsAt(Date.now() + ms);
+                        setTimeLeftMs(ms);
+                      }
+                    }
+                  }}
+                  className={[
+                    "inline-flex items-center justify-center w-9 h-9 rounded-md border transition",
+                    timerEnabled ? "bg-rose-600 border-rose-600 text-white" : "bg-white border-gray-300 text-gray-700"
+                  ].join(" ")}
+                  aria-pressed={timerEnabled}
+                  title="Toggle turn timer"
+                >
+                  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" width="18" height="18" fill="currentColor" aria-hidden>
+                    <path d="M9 2h6v2H9z"/>
+                    <path d="M12 6a8 8 0 1 0 0 16 8 8 0 0 0 0-16Zm0 2a6 6 0 1 1 0 12 6 6 0 0 1 0-12Zm1 3h-2v4l3 2 .999-1.733L13 12.868V11Z"/>
+                  </svg>
+                </button>
+                <input
+                  type="number"
+                  min={3}
+                  max={120}
+                  step={1}
+                  value={timerDurationSec}
+                  onChange={(e) => {
+                    const v = parseInt(e.target.value || '0', 10);
+                    const clamped = Math.max(3, Math.min(120, Number.isFinite(v) ? v : 10));
+                    setTimerDurationSec(clamped);
+                    if (timerEnabled && !choosingTurn && !penaltyActive && !awaitingNextAfterPenalty && !finished) {
+                      const ms = clamped * 1000;
+                      setTurnEndsAt(Date.now() + ms);
+                      setTimeLeftMs(ms);
+                    }
+                  }}
+                  className="w-16 h-9 px-2 py-1 text-sm border rounded-md bg-white"
+                  aria-label="Turn timer seconds"
+                />
+              </div>
+              <div className="text-center space-y-3">
+                <div className="text-xs text-gray-600">Word {Math.max(1, words.length - remaining.length)} of {words.length}</div>
+                <WordSlots
+                  word={currentWord}
+                  guessed={guessed}
+                  alphabet={alphabet}
+                  revealAll={awaitingNextAfterPenalty}
+                  color={awaitingNextAfterPenalty ? '#dc2626' : undefined}
+                />
+                {timerEnabled && !choosingTurn && !penaltyActive && !solved && (
+                  <div className="text-xs text-gray-700">Time left: {Math.ceil(timeLeftMs / 1000)}s</div>
+                )}
+                <div className="text-xs text-gray-600">Wrong: {[...wrong].join(" ") || "–"}</div>
+              </div>
+              <div className="flex justify-center">
+                <BigGallows parts={parts} penaltyIndex={penaltyActive ? penaltyIndex : null} size={220} />
+              </div>
             </div>
           </Card>
           <Card>
@@ -429,9 +585,6 @@ return (
                         {displayScore}
                       </span>
                     </div>
-                    <div className="mt-1" aria-label={`Lives remaining: ${lives[i] ?? maxLives}`}>
-                      <HangmanMini stage={Math.max(0, maxLives - (lives[i] ?? maxLives))} color={accent} size={64} />
-                    </div>
                     {active && <div className="absolute -bottom-1 left-1/2 -translate-x-1/2 w-10 h-1 rounded-full" style={{ backgroundColor: accent }} />}
                   </div>
                 );
@@ -451,7 +604,7 @@ return (
                     size="sm"
                     variant={used ? 'ghost' : 'secondary'}
                     className={used ? (isCorrect ? 'bg-emerald-600 text-white' : 'bg-rose-600 text-white') : ''}
-                    disabled={used || choosingTurn}
+                    disabled={used || choosingTurn || penaltyActive || awaitingNextAfterPenalty}
                     onClick={() => guessLetter(ch)}
                   >
                     {ch}
@@ -459,9 +612,9 @@ return (
                 );
               })}
             </div>
-            {solved && (
+            {(solved || awaitingNextAfterPenalty) && (
               <div className="mt-3 flex justify-end">
-                <Button variant="primary" onClick={() => endRound(true)}>Next Word</Button>
+                <Button variant="primary" onClick={() => endRound(!!solved)}>Next Word</Button>
               </div>
             )}
           </Card>
@@ -487,15 +640,33 @@ return (
         </div>
         {/* Old turn banner removed */}
         {/* Random player chooser overlay for selecting next team */}
-        {choosingTurn && teams.length > 0 && (
+        {choosingTurn && !penaltyActive && teams.length > 0 && (
           <RandomPlayerChooser
-            candidates={teams.map((t, i) => ({ id: i, label: t, color: accents[i % accents.length] }))
-              .filter((c) => (lives[c.id] || 0) > 0)}
-            pickedBefore={pickedBefore}
+            candidates={teams.map((t, i) => ({ id: i, label: t, color: accents[i % accents.length] }))}
+            // weight by teams with fewer answers so far this game
+            weightsById={Object.fromEntries(teams.map((_, i) => {
+              const counts = answerCounts.length === teams.length ? answerCounts : Array.from({ length: teams.length }, () => 0);
+              const maxC = Math.max(0, ...counts);
+              const w = (maxC - (counts[i] || 0)) + 1; // at least 1
+              return [i, w];
+            }))}
             onChosen={(teamId) => {
               setCurrentTeamIndex(teamId);
-              setPickedBefore((prev) => new Set(prev).add(teamId));
+              setAnswerCounts((prev) => {
+                const next = prev.length === teams.length ? [...prev] : Array.from({ length: teams.length }, () => 0);
+                next[teamId] = (next[teamId] || 0) + 1;
+                return next;
+              });
               setChoosingTurn(false);
+              // start a fresh turn timer if enabled
+              if (timerEnabled && timerDurationSec > 0) {
+                const ms = Math.max(1, Math.floor(timerDurationSec * 1000));
+                setTurnEndsAt(Date.now() + ms);
+                setTimeLeftMs(ms);
+              } else {
+                setTurnEndsAt(null);
+                setTimeLeftMs(0);
+              }
             }}
           />
         )}
@@ -509,30 +680,73 @@ return (
   );
 }
 
-function HangmanMini({ stage, color = '#111', size = 72 }: { stage: number; color?: string; size?: number }) {
-  // stage: 0 = none, 1=head, 2=+body, 3=+left arm, 4=+right arm, 5=+left leg, 6=+right leg
-  const s = Math.max(0, Math.min(6, Math.floor(stage || 0)));
+// Unified big gallows with color-coded parts by wrong guess order
+function BigGallows({ parts, penaltyIndex = null, size = 220 }: { parts: { teamId: number; color: string }[]; penaltyIndex?: number | null; size?: number }) {
+  const s = Math.max(0, Math.min(6, parts.length));
   const gallows = '#9ca3af';
+  const w = size;
+  const h = size;
+  // scale drawing to fit size (original base was 64)
+  // Use fixed stroke widths in viewBox units for thinner lines at large sizes
+  const gallowsStroke = 1.4;
+  const partStroke = 1.0;
+  const p = parts;
+  const pos: { x: number; y: number }[] = [
+    { x: 40, y: 13 }, // head
+    { x: 40, y: 33 }, // body
+    { x: 34, y: 33 }, // left arm
+    { x: 46, y: 33 }, // right arm
+    { x: 36, y: 48 }, // left leg
+    { x: 44, y: 48 }, // right leg
+  ];
   return (
-    <svg width={size} height={size} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
+    <svg width={w} height={h} viewBox="0 0 64 64" fill="none" xmlns="http://www.w3.org/2000/svg">
       {/* gallows */}
-      <line x1="8" y1="58" x2="56" y2="58" stroke={gallows} strokeWidth="3" />
-      <line x1="16" y1="58" x2="16" y2="8" stroke={gallows} strokeWidth="3" />
-      <line x1="16" y1="8" x2="40" y2="8" stroke={gallows} strokeWidth="3" />
-      <line x1="40" y1="8" x2="40" y2="14" stroke={gallows} strokeWidth="3" />
-      {/* man drawn in 6 steps */}
-      {/* 1: head */}
-      {s >= 1 && <circle cx="40" cy="20" r="6" stroke={color} strokeWidth="3" fill="none" />}
-      {/* 2: body */}
-      {s >= 2 && <line x1="40" y1="26" x2="40" y2="40" stroke={color} strokeWidth="3" />}
-      {/* 3: left arm */}
-      {s >= 3 && <line x1="40" y1="30" x2="32" y2="36" stroke={color} strokeWidth="3" />}
-      {/* 4: right arm */}
-      {s >= 4 && <line x1="40" y1="30" x2="48" y2="36" stroke={color} strokeWidth="3" />}
-      {/* 5: left leg */}
-      {s >= 5 && <line x1="40" y1="40" x2="34" y2="54" stroke={color} strokeWidth="3" />}
-      {/* 6: right leg */}
-      {s >= 6 && <line x1="40" y1="40" x2="46" y2="54" stroke={color} strokeWidth="3" />}
+      <line x1="8" y1="58" x2="56" y2="58" stroke={gallows} strokeWidth={gallowsStroke} />
+      <line x1="16" y1="58" x2="16" y2="8" stroke={gallows} strokeWidth={gallowsStroke} />
+      <line x1="16" y1="8" x2="40" y2="8" stroke={gallows} strokeWidth={gallowsStroke} />
+      <line x1="40" y1="8" x2="40" y2="14" stroke={gallows} strokeWidth={gallowsStroke} />
+      {/* parts 1..6 colored by who missed */}
+      {s >= 1 && <circle cx="40" cy="20" r="5" stroke={p[0].color} strokeWidth={partStroke} fill="none" />}
+      {s >= 2 && <line x1="40" y1="26" x2="40" y2="40" stroke={p[1].color} strokeWidth={partStroke} />}
+      {s >= 3 && <line x1="40" y1="30" x2="32" y2="36" stroke={p[2].color} strokeWidth={partStroke} />}
+      {s >= 4 && <line x1="40" y1="30" x2="48" y2="36" stroke={p[3].color} strokeWidth={partStroke} />}
+      {s >= 5 && <line x1="40" y1="40" x2="34" y2="54" stroke={p[4].color} strokeWidth={partStroke} />}
+      {s >= 6 && <line x1="40" y1="40" x2="46" y2="54" stroke={p[5].color} strokeWidth={partStroke} />}
+
+      {/* penalty floating -1 near current deduction */}
+      {penaltyIndex != null && penaltyIndex >= 0 && penaltyIndex < pos.length && (
+        <text x={pos[penaltyIndex].x} y={pos[penaltyIndex].y - 6} textAnchor="middle" fontSize="8" fill={p[penaltyIndex]?.color || '#ef4444'}>
+          -1
+        </text>
+      )}
     </svg>
+  );
+}
+
+// Renders underscores as lines and places revealed letters above the line
+function WordSlots({ word, guessed, alphabet, revealAll = false, color }: { word: string; guessed: Set<string>; alphabet: string[]; revealAll?: boolean; color?: string }) {
+  return (
+    <div className="flex flex-wrap items-end justify-center gap-x-2 gap-y-3">
+      {word.split("").map((ch, i) => {
+        const isAlpha = alphabet.includes(ch);
+        if (!isAlpha) {
+          return (
+            <span key={`sep-${i}`} className="px-1 text-2xl font-mono">
+              {ch}
+            </span>
+          );
+        }
+        const revealed = revealAll || guessed.has(ch);
+        return (
+          <span key={`slot-${i}`} className="relative inline-flex items-end justify-center h-12 w-8">
+            <span className="absolute bottom-0 left-0 right-0 h-[2px] bg-gray-800" />
+            {revealed && (
+              <span className="absolute bottom-3 text-2xl font-mono" style={color ? { color } : undefined}>{ch}</span>
+            )}
+          </span>
+        );
+      })}
+    </div>
   );
 }
