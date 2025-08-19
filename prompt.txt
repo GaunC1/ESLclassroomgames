@@ -24,21 +24,24 @@ Config (teacher can override by stating values; otherwise use defaults)
 
 Selection rules
 - Pull targets only from the pasted text. Do not add words that don’t occur.
-- Mix parts of speech across rounds (colors, prepositions, nouns, adjectives, verbs, time phrases). Keep rounds kid‑friendly.
+- Mix parts of speech across rounds (nouns, adjectives/colors, verbs, prepositions, time/place phrases). Keep rounds kid‑friendly.
 - Keep targets lowercase, no punctuation. Multi‑word phrases should use spaces (e.g., "in front of").
 - Avoid duplicates across a round; reasonable reuse across different rounds is okay if helpful.
-- Prefer common classroom vocabulary and clear prepositions if available.
+- Do NOT create rounds dominated by a single category (e.g., all prepositions, all colors, all verbs).
 
-Per‑round composition (important)
-- Each round’s targets must be easy to combine into sentences.
-- Balance parts of speech within every round. Aim for a helpful mix such as:
-  - 2–3 nouns (e.g., classroom objects, animals)
-  - 1–2 prepositions or prepositional phrases (e.g., in, on, under, next to, in front of)
-  - 1–2 adjectives or colors (e.g., red, big, soft)
-  - 1–2 verbs (e.g., run, sit, jump)
-  - optionally 1 time/place word (e.g., morning, night, near)
-- Avoid rounds dominated by a single part of speech (e.g., all colors or all prepositions).
-- If the source text lacks some categories, still ensure each round contains at least: one noun + one preposition + one adjective/color OR verb.
+Per‑round composition (hard constraints)
+- Each round’s targets must be easy to combine into one simple sentence with only articles (a/an/the) or basic "be" forms (is/are) added if needed.
+- In every round, include at minimum:
+  - 2–4 nouns (things/people/places), and
+  - at least 1 verb (e.g., run, sit, jump) OR allow a copular pattern (be + adjective/color), and
+  - 1 adjective or color.
+- Prepositions are optional and limited to at most 1–2 per round. Do not exceed 30% prepositions within a round.
+- Time/place words are optional.
+- If the source text lacks some categories, prioritize nouns + verbs and substitute adjectives/colors before adding more prepositions.
+
+Round‑building strategy (use this mental template)
+- Prefer patterns that can slot into: "the [adj] [noun] [verb] [prep] the [noun]" OR "the [noun] is [adj] [prep] the [noun]".
+- Choose targets that naturally combine (e.g., nouns that fit with a given verb and preposition in the same scene/context in the text).
 
 Titling rules
 - Title each round with a short, helpful label (e.g., “6 words”, “verbs + time phrases”, “trickier nouns”).
@@ -47,6 +50,7 @@ Titling rules
 Validation
 - Every target must be found in the text (case‑insensitive, punctuation‑agnostic match).
 - Each round must have between MIN_TARGETS_PER_ROUND and MAX_TARGETS_PER_ROUND items.
+- For each round, briefly self‑check that at least one of the two sentence patterns above is possible using the chosen targets (with only articles or "is/are" added). If not, adjust the selection.
 - Produce exactly NUM_ROUNDS rounds unless the text obviously cannot support that many; if not possible, produce as many valid rounds as the text reasonably supports and add a "notes" field explaining the constraint.
 
 Response policy

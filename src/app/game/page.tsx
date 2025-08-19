@@ -70,6 +70,8 @@ export default function GamePage() {
 
   // Per-team/round
   const [sentences, setSentences] = useState<string[][]>([]); // [team][round]
+  // Manually credited targets per team per round
+  const [manualCredits, setManualCredits] = useState<string[][][]>([]); // [team][round] -> string[] of targets
   const [penalties, setPenalties] = useState<number[][]>([]); // [team][round]
 
   // Grading workflow
@@ -127,8 +129,9 @@ export default function GamePage() {
 
     setTeams(cleaned);
     setRounds(resolved);
-    setSentences(Array.from({ length: cleaned.length }, () => Array(resolved.length).fill("")));
-    setPenalties(Array.from({ length: cleaned.length }, () => Array(resolved.length).fill(0)));
+    setSentences(Array.from({ length: cleaned.length }, () => Array.from({ length: resolved.length }, () => "")));
+    setPenalties(Array.from({ length: cleaned.length }, () => Array.from({ length: resolved.length }, () => 0)));
+    setManualCredits(Array.from({ length: cleaned.length }, () => Array.from({ length: resolved.length }, () => [])));
     setRoundIndex(0);
     setPhase("prompt");
     setIsSetup(false);
@@ -176,11 +179,18 @@ export default function GamePage() {
   }
 
   // Derived totals
+  // Compute score with manual credits merged with automatic detection
   const finalScore = useCallback((ti: number, ri: number) => {
-    const base = scoreSentence(sentences[ti]?.[ri] ?? "", rounds[ri].targets).score;
+    const s = sentences[ti]?.[ri] ?? "";
+    const targets = rounds[ri].targets;
+    const auto = scoreSentence(s, targets);
+    const manual = new Set(manualCredits[ti]?.[ri] ?? []);
+    const unionUsed = new Set<string>([...auto.used, ...manual]);
+    const base = unionUsed.size;
+    const bonus = unionUsed.size === targets.length ? 1 : 0;
     const pen = penalties[ti]?.[ri] ?? 0;
-    return clamp(base - pen, 0);
-  }, [sentences, rounds, penalties]);
+    return clamp(base + bonus - pen, 0);
+  }, [sentences, rounds, penalties, manualCredits]);
   const perTeamTotals = useMemo(
     () => teams.map((_, ti) => rounds.reduce((sum, _r, ri) => sum + finalScore(ti, ri), 0)),
     [teams, rounds, finalScore]
@@ -544,22 +554,46 @@ export default function GamePage() {
               {(() => {
                 const s = sentences[gradingTeamIndex]?.[roundIndex] ?? "";
                 const res = scoreSentence(s, round.targets);
+                const manual = new Set(manualCredits[gradingTeamIndex]?.[roundIndex] ?? []);
+                const unionUsed = new Set<string>([...res.used, ...manual]);
+                const base = unionUsed.size;
+                const bonus = base === round.targets.length ? 1 : 0;
+                const onToggleManual = (t: string) => {
+                  if (res.used.includes(t)) return; // already auto-counted; no need to toggle
+                  setManualCredits((prev) => {
+                    const next = prev.map((row) => row.map((arr) => [...arr]));
+                    const list = new Set(next[gradingTeamIndex][roundIndex] ?? []);
+                    if (list.has(t)) list.delete(t); else list.add(t);
+                    next[gradingTeamIndex][roundIndex] = Array.from(list);
+                    return next;
+                  });
+                };
                 return (
                   <div className="space-y-2">
                     <div className="text-sm font-semibold">Target Words/Phrases</div>
                     <div className="flex flex-wrap gap-2">
                       {round.targets.map((t) => {
-                        const used = res.used.includes(t);
+                        const autoUsed = res.used.includes(t);
+                        const manUsed = manual.has(t);
+                        const used = autoUsed || manUsed;
                         return (
-                          <span key={t} className={`inline-flex items-center gap-1 px-3 py-1 chip text-xs ${used ? "chip-used" : ""}`}>
-                            {used ? "✅" : "⭕️"} {t}
+                          <button
+                            type="button"
+                            key={t}
+                            onClick={() => onToggleManual(t)}
+                            className={`inline-flex items-center gap-1 px-3 py-1 rounded chip text-xs border ${
+                              used ? "chip-used" : "hover:bg-gray-50"
+                            } ${autoUsed ? "cursor-default" : "cursor-pointer"}`}
+                            title={autoUsed ? "Counted automatically" : (manUsed ? "Click to remove manual credit" : "Click to add manual credit")}
+                          >
+                            {autoUsed ? "✅" : manUsed ? "☑️" : "⭕️"} {t}
                             {used && <span className="text-[10px] ml-1">+1</span>}
-                          </span>
+                          </button>
                         );
                       })}
                     </div>
                     <div className="text-sm text-gray-700">
-                      Base: <span className="font-medium">{res.score}</span>{res.bonus ? " (includes +1 bonus)" : ""}
+                      Base: <span className="font-medium">{base + bonus}</span>{bonus ? " (includes +1 bonus)" : ""}
                     </div>
                   </div>
                 );
